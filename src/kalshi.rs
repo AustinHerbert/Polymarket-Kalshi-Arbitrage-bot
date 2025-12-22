@@ -12,6 +12,7 @@ use rsa::{
     pss::SigningKey,
     sha2::Sha256,
     signature::{RandomizedSigner, SignatureEncoding},
+    traits::PublicKeyParts,
     RsaPrivateKey,
 };
 use serde::{Deserialize, Serialize};
