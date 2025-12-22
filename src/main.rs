@@ -351,7 +351,7 @@ async fn main() -> Result<()> {
     let kalshi_handle = tokio::spawn(async move {
         loop {
             if let Err(e) = kalshi::run_ws(&kalshi_ws_config, kalshi_state.clone(), kalshi_exec_tx.clone(), kalshi_threshold).await {
-                error!("[KALSHI] WebSocket disconnected: {} - reconnecting...", e);
+                error!("[KALSHI] WebSocket disconnected: {:?} - reconnecting...", e);
             }
             tokio::time::sleep(tokio::time::Duration::from_secs(WS_RECONNECT_DELAY_SECS)).await;
         }
