@@ -1,46 +1,47 @@
-//! Simple test to verify Kalshi API credentials work
+//! Test Kalshi API authentication
 
 use anyhow::Result;
-use prediction_market_arbitrage::kalshi::KalshiApiClient;
+use prediction_market_arbitrage::kalshi::KalshiConfig;
 
 #[tokio::main]
 async fn main() -> Result<()> {
     dotenvy::dotenv().ok();
 
-    println!("Testing Kalshi API credentials...\n");
+    println!("=== Kalshi API Authentication Test ===\n");
 
     // Load config from environment
-    let config = prediction_market_arbitrage::kalshi::KalshiConfig::from_env()?;
-    println!("✅ API key loaded: {}...", &config.api_key_id[..8]);
+    let config = KalshiConfig::from_env()?;
+    println!("API key: {}...", &config.api_key_id[..8]);
 
-    // Create client
-    let client = KalshiApiClient::new(config);
+    // Test 1: Sign a message and show details
+    let test_message = "1735000000000GET/trade-api/ws/v2";
+    println!("\nTest message: '{}'", test_message);
 
-    // Try to fetch exchange status (public endpoint, but we'll sign it anyway)
-    println!("\nTesting REST API connection...");
+    let signature = config.sign(test_message)?;
+    println!("Signature length: {}", signature.len());
+    println!("Signature (first 50): {}", &signature[..50.min(signature.len())]);
 
-    let url = "https://api.elections.kalshi.com/trade-api/v2/exchange/status";
-    let resp = reqwest::get(url).await?;
-    println!("Exchange status: {}", resp.text().await?);
+    // Test 2: Try REST API with real timestamp
+    println!("\n=== Testing REST API ===");
 
-    // Try an authenticated endpoint
-    println!("\nTesting authenticated endpoint (portfolio/balance)...");
-
-    let timestamp_ms = std::time::SystemTime::now()
+    let timestamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
         .as_millis() as u64;
 
-    let path = "/portfolio/balance";
-    let full_path = format!("/trade-api/v2{}", path);
-    let signature = client.config.sign(&format!("{}GET{}", timestamp_ms, full_path))?;
+    let path = "/trade-api/v2/portfolio/balance";
+    let message = format!("{}GET{}", timestamp, path);
+    println!("Message: '{}'", message);
+
+    let signature = config.sign(&message)?;
+    println!("Signature (first 50): {}", &signature[..50]);
 
     let http = reqwest::Client::new();
     let resp = http
-        .get(format!("https://api.elections.kalshi.com/trade-api/v2{}", path))
-        .header("KALSHI-ACCESS-KEY", &client.config.api_key_id)
+        .get(format!("https://api.elections.kalshi.com{}", path))
+        .header("KALSHI-ACCESS-KEY", &config.api_key_id)
         .header("KALSHI-ACCESS-SIGNATURE", &signature)
-        .header("KALSHI-ACCESS-TIMESTAMP", timestamp_ms.to_string())
+        .header("KALSHI-ACCESS-TIMESTAMP", timestamp.to_string())
         .send()
         .await?;
 
@@ -48,12 +49,52 @@ async fn main() -> Result<()> {
     let body = resp.text().await?;
 
     if status.is_success() {
-        println!("✅ Authentication successful!");
-        println!("Balance response: {}", body);
+        println!("\n✅ REST API SUCCESS!");
+        println!("Response: {}", body);
     } else {
-        println!("❌ Authentication failed!");
+        println!("\n❌ REST API FAILED!");
         println!("Status: {}", status);
         println!("Response: {}", body);
+    }
+
+    // Test 3: Try WebSocket connection
+    println!("\n=== Testing WebSocket ===");
+
+    use tokio_tungstenite::{connect_async, tungstenite::http::Request};
+
+    let ws_timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_millis()
+        .to_string();
+
+    let ws_message = format!("{}GET/trade-api/ws/v2", ws_timestamp);
+    println!("WS Message: '{}'", ws_message);
+
+    let ws_signature = config.sign(&ws_message)?;
+    println!("WS Signature (first 50): {}", &ws_signature[..50]);
+
+    let request = Request::builder()
+        .uri("wss://api.elections.kalshi.com/trade-api/ws/v2")
+        .header("Host", "api.elections.kalshi.com")
+        .header("Connection", "Upgrade")
+        .header("Upgrade", "websocket")
+        .header("Sec-WebSocket-Version", "13")
+        .header("Sec-WebSocket-Key", tokio_tungstenite::tungstenite::handshake::client::generate_key())
+        .header("KALSHI-ACCESS-KEY", &config.api_key_id)
+        .header("KALSHI-ACCESS-SIGNATURE", &ws_signature)
+        .header("KALSHI-ACCESS-TIMESTAMP", &ws_timestamp)
+        .body(())?;
+
+    match connect_async(request).await {
+        Ok((ws_stream, _)) => {
+            println!("\n✅ WebSocket SUCCESS!");
+            drop(ws_stream);
+        }
+        Err(e) => {
+            println!("\n❌ WebSocket FAILED!");
+            println!("Error: {:?}", e);
+        }
     }
 
     Ok(())
