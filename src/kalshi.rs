@@ -177,7 +177,12 @@ impl KalshiConfig {
 
     pub fn sign(&self, message: &str) -> Result<String> {
         tracing::debug!("[KALSHI-DEBUG] Signing message: {}", message);
-        let signing_key = SigningKey::<Sha256>::new(self.private_key.clone());
+        // Use MAX salt length like Python's padding.PSS.MAX_LENGTH
+        // MAX_LENGTH = key_size_bytes - hash_length - 2
+        let key_size_bytes = self.private_key.size();
+        let hash_length = 32; // SHA256 output size
+        let max_salt_len = key_size_bytes - hash_length - 2;
+        let signing_key = SigningKey::<Sha256>::new_with_salt_len(self.private_key.clone(), max_salt_len);
         let signature = signing_key.sign_with_rng(&mut rand::thread_rng(), message.as_bytes());
         let sig_b64 = BASE64.encode(signature.to_bytes());
         tracing::debug!("[KALSHI-DEBUG] Signature (first 50 chars): {}...", &sig_b64[..50.min(sig_b64.len())]);
