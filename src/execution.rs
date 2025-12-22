@@ -19,6 +19,7 @@ use crate::types::{
 };
 use crate::circuit_breaker::CircuitBreaker;
 use crate::position_tracker::{FillRecord, PositionChannel};
+use crate::priority_config::PriorityConfig;
 
 // =============================================================================
 // EXECUTION ENGINE
@@ -57,6 +58,8 @@ pub struct ExecutionEngine {
     clock: NanoClock,
     pub dry_run: bool,
     test_mode: bool,
+    /// Priority configuration for liquidity constraints (optional)
+    priority_config: Option<PriorityConfig>,
 }
 
 impl ExecutionEngine {
@@ -72,6 +75,16 @@ impl ExecutionEngine {
             .map(|v| v == "1" || v == "true")
             .unwrap_or(false);
 
+        // Load priority config if priority mode is enabled
+        let priority_config = {
+            let config = PriorityConfig::from_env();
+            if config.enabled {
+                Some(config)
+            } else {
+                None
+            }
+        };
+
         Self {
             kalshi,
             poly_async,
@@ -82,6 +95,7 @@ impl ExecutionEngine {
             clock: NanoClock::new(),
             dry_run,
             test_mode,
+            priority_config,
         }
     }
 
@@ -129,6 +143,58 @@ impl ExecutionEngine {
 
         // Calculate max contracts from size (min of both sides)
         let mut max_contracts = (req.yes_size.min(req.no_size) / 100) as i64;
+
+        // Apply liquidity constraints if priority mode is enabled
+        if let Some(ref config) = self.priority_config {
+            let min_size_cents = (req.yes_size.min(req.no_size) as u32) * 100;
+
+            // Check minimum liquidity constraint
+            if !config.meets_min_liquidity(min_size_cents) {
+                warn!(
+                    "[EXEC] 💧 Liquidity below minimum: {}¢ < {}¢ minimum",
+                    min_size_cents, config.min_liquidity_cents
+                );
+                self.release_in_flight(market_id);
+                return Ok(ExecutionResult {
+                    market_id,
+                    success: false,
+                    profit_cents: 0,
+                    latency_ns: self.clock.now_ns() - req.detected_ns,
+                    error: Some("Below min liquidity"),
+                });
+            }
+
+            // Clamp to maximum liquidity constraint
+            if config.exceeds_max_liquidity(min_size_cents) {
+                let max_contracts_from_config = (config.max_liquidity_cents / 100) as i64;
+                if max_contracts > max_contracts_from_config {
+                    info!(
+                        "[EXEC] 💧 Clamping position from {} to {} contracts (max liquidity: ${})",
+                        max_contracts, max_contracts_from_config, config.max_liquidity_cents / 100
+                    );
+                    max_contracts = max_contracts_from_config;
+                }
+            }
+
+            // Check minimum profit percentage if priority mode is on
+            let profit_percent = config.profit_percent_from_cost(
+                (req.yes_price + req.no_price + req.estimated_fee_cents()) as u16
+            );
+            if !config.meets_min_profit(profit_percent) {
+                warn!(
+                    "[EXEC] 📊 Profit {:.2}% below minimum {:.2}%",
+                    profit_percent, config.min_arb_percent
+                );
+                self.release_in_flight(market_id);
+                return Ok(ExecutionResult {
+                    market_id,
+                    success: false,
+                    profit_cents: 0,
+                    latency_ns: self.clock.now_ns() - req.detected_ns,
+                    error: Some("Below min profit %"),
+                });
+            }
+        }
 
         // Safety: In test mode, cap position size at 10 contracts
         // Note: Polymarket enforces a $1 minimum order value. At 40¢ per contract,

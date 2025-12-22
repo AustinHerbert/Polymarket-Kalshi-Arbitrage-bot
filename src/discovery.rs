@@ -433,6 +433,19 @@ impl DiscoveryClient {
                     match gamma.lookup_market(&task.poly_slug).await {
                         Ok(Some((yes_token, no_token))) => {
                             let team_suffix = extract_team_suffix(&task.market.ticker);
+
+                            // Parse expiration time from Kalshi market
+                            let expiration_time_secs = task.market.expiration_time
+                                .as_ref()
+                                .or(task.market.close_time.as_ref())
+                                .and_then(|t| parse_iso_timestamp(t));
+
+                            // Check if market is currently live (status-based or time-based)
+                            let is_live = task.market.status
+                                .as_ref()
+                                .map(|s| s.to_lowercase() == "active" || s.to_lowercase() == "live")
+                                .unwrap_or(false);
+
                             Some(MarketPair {
                                 pair_id: format!("{}-{}", task.poly_slug, task.market.ticker).into(),
                                 league: task.league.into(),
@@ -445,6 +458,8 @@ impl DiscoveryClient {
                                 poly_no_token: no_token.into(),
                                 line_value: task.market.floor_strike,
                                 team_suffix: team_suffix.map(|s| s.into()),
+                                expiration_time_secs,
+                                is_live,
                             })
                         }
                         Ok(None) => None,
@@ -653,10 +668,78 @@ fn extract_team_suffix(ticker: &str) -> Option<String> {
     splits.next().map(|s| s.to_uppercase())
 }
 
+/// Parse ISO 8601 timestamp to Unix seconds
+/// Handles formats like "2025-12-27T15:00:00Z" or "2025-12-27T15:00:00.000Z"
+fn parse_iso_timestamp(s: &str) -> Option<u64> {
+    // Try to parse as ISO 8601
+    // Format: "2025-12-27T15:00:00Z" or "2025-12-27T15:00:00.000Z"
+
+    // Simple manual parsing for common formats
+    let cleaned = s.trim().replace("Z", "").replace("+00:00", "");
+    let parts: Vec<&str> = cleaned.split('T').collect();
+    if parts.len() != 2 {
+        return None;
+    }
+
+    let date_parts: Vec<&str> = parts[0].split('-').collect();
+    if date_parts.len() != 3 {
+        return None;
+    }
+
+    let year: i32 = date_parts[0].parse().ok()?;
+    let month: u32 = date_parts[1].parse().ok()?;
+    let day: u32 = date_parts[2].parse().ok()?;
+
+    // Parse time (ignore milliseconds)
+    let time_str = parts[1].split('.').next()?;
+    let time_parts: Vec<&str> = time_str.split(':').collect();
+    if time_parts.len() < 2 {
+        return None;
+    }
+
+    let hour: u32 = time_parts[0].parse().ok()?;
+    let minute: u32 = time_parts[1].parse().ok()?;
+    let second: u32 = time_parts.get(2).and_then(|s| s.parse().ok()).unwrap_or(0);
+
+    // Calculate Unix timestamp
+    // Days from epoch (1970-01-01) to date
+    let days_from_epoch = days_since_epoch(year, month, day)?;
+    let seconds = (days_from_epoch as u64) * 86400 + (hour as u64) * 3600 + (minute as u64) * 60 + (second as u64);
+
+    Some(seconds)
+}
+
+/// Calculate days since Unix epoch (1970-01-01)
+fn days_since_epoch(year: i32, month: u32, day: u32) -> Option<i64> {
+    // Use a well-tested formula for calculating days since Unix epoch
+    // This is based on the algorithm from Howard Hinnant
+
+    let year = year as i64;
+    let month = month as i64;
+    let day = day as i64;
+
+    // Adjust year for months before March (treating Jan/Feb as months 13/14 of previous year)
+    let (y, m) = if month <= 2 {
+        (year - 1, month + 12)
+    } else {
+        (year, month)
+    };
+
+    // Calculate days using the modified Julian day formula, then convert to Unix epoch
+    let era = if y >= 0 { y } else { y - 399 } / 400;
+    let yoe = (y - era * 400) as u64;  // Year of era [0, 399]
+    let doy = (153 * (m - 3) as u64 + 2) / 5 + day as u64 - 1;  // Day of year [0, 365]
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;  // Day of era [0, 146096]
+
+    // Convert to days since epoch (epoch is era 4, day 719468 in civil calendar)
+    let days = era * 146097 + doe as i64 - 719468;
+    Some(days)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_parse_kalshi_ticker() {
         let parsed = parse_kalshi_event_ticker("KXEPLGAME-25DEC27CFCAVL").unwrap();
@@ -664,10 +747,38 @@ mod tests {
         assert_eq!(parsed.team1, "CFC");
         assert_eq!(parsed.team2, "AVL");
     }
-    
+
     #[test]
     fn test_kalshi_date_to_iso() {
         assert_eq!(kalshi_date_to_iso("25DEC27"), "2025-12-27");
         assert_eq!(kalshi_date_to_iso("25JAN01"), "2025-01-01");
+    }
+
+    #[test]
+    fn test_parse_iso_timestamp() {
+        // Test standard ISO format
+        let ts = parse_iso_timestamp("2025-12-27T15:00:00Z").unwrap();
+        // 2025-12-27 15:00:00 UTC
+        // Days from 1970-01-01 to 2025-12-27: 20449 days
+        // Plus 15 hours = 54000 seconds
+        assert!(ts > 1735300000);  // Sanity check: after Dec 2024
+        assert!(ts < 1767000000);  // Sanity check: before 2026
+
+        // Test with milliseconds
+        let ts2 = parse_iso_timestamp("2025-12-27T15:00:00.000Z").unwrap();
+        assert_eq!(ts, ts2);
+
+        // Test with timezone
+        let ts3 = parse_iso_timestamp("2025-12-27T15:00:00+00:00").unwrap();
+        assert_eq!(ts, ts3);
+    }
+
+    #[test]
+    fn test_days_since_epoch() {
+        // 1970-01-01 should be day 0
+        assert_eq!(days_since_epoch(1970, 1, 1), Some(0));
+
+        // 2000-01-01 should be 10957 days (30 years including leap years)
+        assert_eq!(days_since_epoch(2000, 1, 1), Some(10957));
     }
 }

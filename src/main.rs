@@ -31,6 +31,8 @@ mod kalshi;
 mod polymarket;
 mod polymarket_clob;
 mod position_tracker;
+mod priority_config;
+mod priority_queue;
 mod types;
 
 use anyhow::{Context, Result};
@@ -46,6 +48,8 @@ use execution::{ExecutionEngine, create_execution_channel, run_execution_loop};
 use kalshi::{KalshiConfig, KalshiApiClient};
 use polymarket_clob::{PolymarketAsyncClient, PreparedCreds, SharedAsyncClient};
 use position_tracker::{PositionTracker, create_position_channel, position_writer_loop};
+use priority_config::PriorityConfig;
+use priority_queue::{SharedPriorityQueue, priority_resort_loop, scan_and_queue_opportunities};
 use types::{GlobalState, PriceCents};
 
 /// Polymarket CLOB API host
@@ -74,6 +78,19 @@ async fn main() -> Result<()> {
         info!("   Mode: DRY RUN (set DRY_RUN=0 to execute)");
     } else {
         warn!("   Mode: LIVE EXECUTION");
+    }
+
+    // Load priority configuration
+    let priority_config = PriorityConfig::from_env();
+    if priority_config.enabled {
+        info!("   Priority Mode: ENABLED");
+        info!("   - Queue re-sort interval: {}s", priority_config.queue_sort_interval_secs);
+        info!("   - Min liquidity per side: ${:.2}", priority_config.min_liquidity_cents as f64 / 100.0);
+        info!("   - Max liquidity per side: ${:.2}", priority_config.max_liquidity_cents as f64 / 100.0);
+        info!("   - Min arb threshold: {:.1}%", priority_config.min_arb_percent);
+        info!("   - Live game priority boost: {:.1}x", priority_config.live_game_priority_boost);
+    } else {
+        info!("   Priority Mode: DISABLED (set PRIORITY_MODE=1 to enable)");
     }
 
     // Load Kalshi credentials
@@ -188,6 +205,67 @@ async fn main() -> Result<()> {
     ));
 
     let exec_handle = tokio::spawn(run_execution_loop(exec_rx, engine));
+
+    // === PRIORITY MODE: Priority-based execution queue ===
+    // When enabled, opportunities are queued and sorted by:
+    // 1. Live games (highest priority)
+    // 2. Earliest expiration (for faster capital turnover)
+    // 3. Greatest profit percentage
+    let priority_handle = if priority_config.enabled {
+        let priority_queue = Arc::new(SharedPriorityQueue::new(priority_config.clone()));
+        let priority_state = state.clone();
+        let priority_exec_tx = exec_tx.clone();
+        let queue_for_resort = priority_queue.clone();
+
+        // Spawn the resort loop
+        tokio::spawn(priority_resort_loop(queue_for_resort));
+
+        // Spawn the priority scanning and execution loop
+        Some(tokio::spawn(async move {
+            let mut scan_interval = tokio::time::interval(
+                tokio::time::Duration::from_secs(priority_config.queue_sort_interval_secs)
+            );
+
+            info!("[PRIORITY] Priority execution mode started");
+
+            loop {
+                scan_interval.tick().await;
+
+                // Scan markets and queue opportunities
+                let threshold = ((ARB_THRESHOLD * 100.0).round() as u16).max(1);
+                let queued = scan_and_queue_opportunities(
+                    &priority_state,
+                    &priority_queue,
+                    threshold,
+                ).await;
+
+                // Process highest priority opportunities
+                while let Some(opp) = priority_queue.pop().await {
+                    // Build execution request with clamped liquidity
+                    let req = opp.request;
+
+                    // Log priority execution
+                    info!(
+                        "[PRIORITY] 🎯 Executing: {} | profit={:.1}% | live={} | expiry={}s",
+                        opp.pair.description,
+                        opp.profit_percent,
+                        opp.is_live,
+                        opp.seconds_until_expiry.unwrap_or(0)
+                    );
+
+                    if let Err(e) = priority_exec_tx.send(req).await {
+                        error!("[PRIORITY] Failed to send execution request: {}", e);
+                    }
+                }
+
+                if queued > 0 {
+                    info!("[PRIORITY] Scan cycle complete: {} opportunities processed", queued);
+                }
+            }
+        }))
+    } else {
+        None
+    };
 
     // === TEST MODE: Synthetic arbitrage injection ===
     // TEST_ARB=1 to enable, TEST_ARB_TYPE=poly_yes_kalshi_no|kalshi_yes_poly_no|poly_only|kalshi_only
@@ -358,7 +436,13 @@ async fn main() -> Result<()> {
 
     // Main event loop - run until termination
     info!("✅ All systems operational - entering main event loop");
-    let _ = tokio::join!(kalshi_handle, poly_handle, heartbeat_handle, exec_handle);
+
+    // Include priority handle if enabled
+    if let Some(priority_h) = priority_handle {
+        let _ = tokio::join!(kalshi_handle, poly_handle, heartbeat_handle, exec_handle, priority_h);
+    } else {
+        let _ = tokio::join!(kalshi_handle, poly_handle, heartbeat_handle, exec_handle);
+    }
 
     Ok(())
 }
