@@ -446,16 +446,12 @@ pub async fn run_ws(
 
     let signature = config.sign(&format!("{}GET/trade-api/ws/v2", timestamp))?;
 
+    // Build request with only auth headers - let tungstenite handle WebSocket handshake headers
     let request = Request::builder()
         .uri(KALSHI_WS_URL)
         .header("KALSHI-ACCESS-KEY", &config.api_key_id)
         .header("KALSHI-ACCESS-SIGNATURE", &signature)
         .header("KALSHI-ACCESS-TIMESTAMP", &timestamp)
-        .header("Host", "api.elections.kalshi.com")
-        .header("Connection", "Upgrade")
-        .header("Upgrade", "websocket")
-        .header("Sec-WebSocket-Version", "13")
-        .header("Sec-WebSocket-Key", tokio_tungstenite::tungstenite::handshake::client::generate_key())
         .body(())?;
 
     let (ws_stream, _) = connect_async(request).await.context("Failed to connect to Kalshi")?;
