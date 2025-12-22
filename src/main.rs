@@ -28,6 +28,7 @@ mod config;
 mod discovery;
 mod execution;
 mod kalshi;
+mod metrics;
 mod polymarket;
 mod polymarket_clob;
 mod position_tracker;
@@ -48,6 +49,7 @@ use execution::{ExecutionEngine, create_execution_channel, run_execution_loop};
 use kalshi::{KalshiConfig, KalshiApiClient};
 use polymarket_clob::{PolymarketAsyncClient, PreparedCreds, SharedAsyncClient};
 use position_tracker::{PositionTracker, create_position_channel, position_writer_loop};
+use metrics::{init_metrics, MetricsSnapshot};
 use priority_config::PriorityConfig;
 use priority_queue::{SharedPriorityQueue, priority_resort_loop, scan_and_queue_opportunities};
 use types::{GlobalState, PriceCents};
@@ -92,6 +94,10 @@ async fn main() -> Result<()> {
     } else {
         info!("   Priority Mode: DISABLED (set PRIORITY_MODE=1 to enable)");
     }
+
+    // Initialize metrics collection
+    let metrics = init_metrics(priority_config.enabled);
+    info!("   Metrics: ENABLED (summary every hour, saved to metrics_*.json)");
 
     // Load Kalshi credentials
     let kalshi_config = KalshiConfig::from_env()?;
@@ -434,14 +440,39 @@ async fn main() -> Result<()> {
         }
     });
 
+    // === METRICS LOGGING: Periodic metrics summary and snapshot saving ===
+    let metrics_clone = metrics.clone();
+    let metrics_priority_mode = priority_config.enabled;
+    let metrics_handle = tokio::spawn(async move {
+        // Log summary every hour, save snapshot every hour
+        let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(3600));
+
+        loop {
+            interval.tick().await;
+
+            // Log summary to console
+            metrics_clone.log_summary();
+
+            // Save snapshot to file
+            let snap = metrics_clone.snapshot();
+            let mode = if metrics_priority_mode { "priority" } else { "standard" };
+            let filename = format!("metrics_{}_latest.json", mode);
+            if let Err(e) = snap.save(&filename) {
+                warn!("[METRICS] Failed to save snapshot: {}", e);
+            } else {
+                info!("[METRICS] Snapshot saved to {}", filename);
+            }
+        }
+    });
+
     // Main event loop - run until termination
     info!("✅ All systems operational - entering main event loop");
 
     // Include priority handle if enabled
     if let Some(priority_h) = priority_handle {
-        let _ = tokio::join!(kalshi_handle, poly_handle, heartbeat_handle, exec_handle, priority_h);
+        let _ = tokio::join!(kalshi_handle, poly_handle, heartbeat_handle, exec_handle, priority_h, metrics_handle);
     } else {
-        let _ = tokio::join!(kalshi_handle, poly_handle, heartbeat_handle, exec_handle);
+        let _ = tokio::join!(kalshi_handle, poly_handle, heartbeat_handle, exec_handle, metrics_handle);
     }
 
     Ok(())
