@@ -201,6 +201,22 @@ pub struct TradeDisplay {
     pub latency_ms: f64,
 }
 
+/// Open position for display
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OpenPositionDisplay {
+    pub market_id: String,
+    pub description: String,
+    pub matched_contracts: f64,
+    pub unmatched_contracts: f64,
+    pub total_cost_dollars: f64,
+    pub guaranteed_profit_dollars: f64,
+    pub opened_at: String,
+    pub kalshi_yes: f64,
+    pub kalshi_no: f64,
+    pub poly_yes: f64,
+    pub poly_no: f64,
+}
+
 /// Shared state for web server
 pub struct WebState {
     pub config: RwLock<RuntimeConfig>,
@@ -455,6 +471,66 @@ async fn get_trades() -> impl IntoResponse {
     Json(trades)
 }
 
+/// GET /api/positions - Get open positions
+async fn get_positions() -> impl IntoResponse {
+    let positions_path = "./positions.json";
+
+    let positions: Vec<OpenPositionDisplay> = if let Ok(content) = std::fs::read_to_string(positions_path) {
+        if let Ok(data) = serde_json::from_str::<serde_json::Value>(&content) {
+            if let Some(positions_map) = data.get("positions").and_then(|v| v.as_object()) {
+                positions_map.values().filter_map(|p| {
+                    let status = p.get("status").and_then(|v| v.as_str()).unwrap_or("");
+                    if status != "open" {
+                        return None;
+                    }
+
+                    let kalshi_yes = p.get("kalshi_yes").and_then(|v| v.get("contracts")).and_then(|v| v.as_f64()).unwrap_or(0.0);
+                    let kalshi_no = p.get("kalshi_no").and_then(|v| v.get("contracts")).and_then(|v| v.as_f64()).unwrap_or(0.0);
+                    let poly_yes = p.get("poly_yes").and_then(|v| v.get("contracts")).and_then(|v| v.as_f64()).unwrap_or(0.0);
+                    let poly_no = p.get("poly_no").and_then(|v| v.get("contracts")).and_then(|v| v.as_f64()).unwrap_or(0.0);
+
+                    let yes_total = kalshi_yes + poly_yes;
+                    let no_total = kalshi_no + poly_no;
+                    let matched = yes_total.min(no_total);
+                    let unmatched = (yes_total - no_total).abs();
+
+                    let kalshi_yes_cost = p.get("kalshi_yes").and_then(|v| v.get("cost_basis")).and_then(|v| v.as_f64()).unwrap_or(0.0);
+                    let kalshi_no_cost = p.get("kalshi_no").and_then(|v| v.get("cost_basis")).and_then(|v| v.as_f64()).unwrap_or(0.0);
+                    let poly_yes_cost = p.get("poly_yes").and_then(|v| v.get("cost_basis")).and_then(|v| v.as_f64()).unwrap_or(0.0);
+                    let poly_no_cost = p.get("poly_no").and_then(|v| v.get("cost_basis")).and_then(|v| v.as_f64()).unwrap_or(0.0);
+                    let fees = p.get("total_fees").and_then(|v| v.as_f64()).unwrap_or(0.0);
+                    let total_cost = kalshi_yes_cost + kalshi_no_cost + poly_yes_cost + poly_no_cost + fees;
+
+                    // Guaranteed profit = matched contracts * $1 - total cost
+                    let guaranteed_profit = matched - total_cost;
+
+                    Some(OpenPositionDisplay {
+                        market_id: p.get("market_id").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                        description: p.get("description").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                        matched_contracts: matched,
+                        unmatched_contracts: unmatched,
+                        total_cost_dollars: total_cost,
+                        guaranteed_profit_dollars: guaranteed_profit,
+                        opened_at: p.get("opened_at").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                        kalshi_yes,
+                        kalshi_no,
+                        poly_yes,
+                        poly_no,
+                    })
+                }).collect()
+            } else {
+                Vec::new()
+            }
+        } else {
+            Vec::new()
+        }
+    } else {
+        Vec::new()
+    };
+
+    Json(positions)
+}
+
 /// POST /api/config
 async fn update_config(
     State(state): State<SharedWebState>,
@@ -502,6 +578,7 @@ pub async fn run_web_server(config: Arc<RwLock<RuntimeConfig>>) {
         .route("/api/status", get(get_status))
         .route("/api/analytics", get(get_analytics))
         .route("/api/trades", get(get_trades))
+        .route("/api/positions", get(get_positions))
         .route("/api/restart", post(trigger_restart))
         .with_state(state);
 
@@ -824,6 +901,7 @@ const DASHBOARD_HTML: &str = r##"<!DOCTYPE html>
         <!-- Tabs -->
         <div class="tabs">
             <button class="tab active" onclick="showTab('analytics')">Analytics</button>
+            <button class="tab" onclick="showTab('positions')">Open Positions</button>
             <button class="tab" onclick="showTab('settings')">Settings</button>
             <button class="tab" onclick="showTab('trades')">Trade History</button>
         </div>
@@ -858,6 +936,53 @@ const DASHBOARD_HTML: &str = r##"<!DOCTYPE html>
                         <div class="metric-label">Total Volume</div>
                     </div>
                 </div>
+            </div>
+        </div>
+
+        <!-- Open Positions Tab -->
+        <div id="tab-positions" class="tab-content">
+            <div class="section">
+                <div class="section-title">Open Positions (Awaiting Settlement)</div>
+                <div id="positions-summary" style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px;">
+                    <div class="metric-card">
+                        <div class="metric-value" id="pos-count">0</div>
+                        <div class="metric-label">Open Positions</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-value" id="pos-matched">0</div>
+                        <div class="metric-label">Matched Contracts</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-value positive" id="pos-profit">$0.00</div>
+                        <div class="metric-label">Guaranteed Profit</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-value warning" id="pos-unmatched">0</div>
+                        <div class="metric-label">Unmatched (Risk)</div>
+                    </div>
+                </div>
+                <table class="trade-table">
+                    <thead>
+                        <tr>
+                            <th>Market</th>
+                            <th>Matched</th>
+                            <th>Cost</th>
+                            <th>Profit</th>
+                            <th>K-Yes</th>
+                            <th>K-No</th>
+                            <th>P-Yes</th>
+                            <th>P-No</th>
+                            <th>Opened</th>
+                        </tr>
+                    </thead>
+                    <tbody id="positions-body">
+                        <tr><td colspan="9" style="text-align:center;color:#8b949e">No open positions</td></tr>
+                    </tbody>
+                </table>
+                <p style="margin-top:12px;color:#8b949e;font-size:12px;">
+                    ℹ️ <strong>Matched positions</strong> = guaranteed profit regardless of outcome.
+                    <strong>Unmatched</strong> = partial fills with market risk (bot auto-closes these).
+                </p>
             </div>
         </div>
 
@@ -954,12 +1079,13 @@ const DASHBOARD_HTML: &str = r##"<!DOCTYPE html>
             document.getElementById('content').style.display = 'none';
 
             try {
-                const [configRes, metaRes, statusRes, analyticsRes, tradesRes] = await Promise.all([
+                const [configRes, metaRes, statusRes, analyticsRes, tradesRes, positionsRes] = await Promise.all([
                     fetch('/api/config'),
                     fetch('/api/meta'),
                     fetch('/api/status'),
                     fetch('/api/analytics'),
-                    fetch('/api/trades')
+                    fetch('/api/trades'),
+                    fetch('/api/positions')
                 ]);
 
                 config = await configRes.json();
@@ -967,10 +1093,12 @@ const DASHBOARD_HTML: &str = r##"<!DOCTYPE html>
                 const status = await statusRes.json();
                 const analytics = await analyticsRes.json();
                 const trades = await tradesRes.json();
+                const positions = await positionsRes.json();
 
                 updateStatus(status);
                 updateAnalytics(analytics);
                 updateTrades(trades);
+                updatePositions(positions);
                 renderSettings();
 
                 document.getElementById('content').style.display = 'block';
@@ -1036,6 +1164,44 @@ const DASHBOARD_HTML: &str = r##"<!DOCTYPE html>
                     <td>${formatCents(t.volume_cents)}</td>
                     <td>${t.latency_ms.toFixed(1)}ms</td>
                     <td class="${statusClass}">${t.status}</td>
+                </tr>`;
+            }).join('');
+        }
+
+        function updatePositions(positions) {
+            const tbody = document.getElementById('positions-body');
+
+            // Update summary
+            let totalMatched = 0, totalProfit = 0, totalUnmatched = 0;
+            positions.forEach(p => {
+                totalMatched += p.matched_contracts;
+                totalProfit += p.guaranteed_profit_dollars;
+                totalUnmatched += p.unmatched_contracts;
+            });
+
+            document.getElementById('pos-count').textContent = positions.length;
+            document.getElementById('pos-matched').textContent = totalMatched.toFixed(0);
+            document.getElementById('pos-profit').textContent = '$' + totalProfit.toFixed(2);
+            document.getElementById('pos-unmatched').textContent = totalUnmatched.toFixed(0);
+
+            if (!positions.length) {
+                tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:#8b949e">No open positions</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = positions.map(p => {
+                const profitClass = p.guaranteed_profit_dollars >= 0 ? 'profit-positive' : 'profit-negative';
+                const opened = new Date(p.opened_at).toLocaleString();
+                return `<tr>
+                    <td title="${p.market_id}">${p.description.substring(0, 25)}...</td>
+                    <td>${p.matched_contracts.toFixed(0)}</td>
+                    <td>$${p.total_cost_dollars.toFixed(2)}</td>
+                    <td class="${profitClass}">$${p.guaranteed_profit_dollars.toFixed(2)}</td>
+                    <td>${p.kalshi_yes > 0 ? p.kalshi_yes.toFixed(0) : '-'}</td>
+                    <td>${p.kalshi_no > 0 ? p.kalshi_no.toFixed(0) : '-'}</td>
+                    <td>${p.poly_yes > 0 ? p.poly_yes.toFixed(0) : '-'}</td>
+                    <td>${p.poly_no > 0 ? p.poly_no.toFixed(0) : '-'}</td>
+                    <td>${opened}</td>
                 </tr>`;
             }).join('');
         }
@@ -1148,12 +1314,14 @@ const DASHBOARD_HTML: &str = r##"<!DOCTYPE html>
         loadAll();
         setInterval(async () => {
             try {
-                const [statusRes, analyticsRes] = await Promise.all([
+                const [statusRes, analyticsRes, positionsRes] = await Promise.all([
                     fetch('/api/status'),
-                    fetch('/api/analytics')
+                    fetch('/api/analytics'),
+                    fetch('/api/positions')
                 ]);
                 updateStatus(await statusRes.json());
                 updateAnalytics(await analyticsRes.json());
+                updatePositions(await positionsRes.json());
             } catch (e) {}
         }, 5000); // Refresh every 5 seconds
     </script>
