@@ -25,6 +25,7 @@
 mod cache;
 mod circuit_breaker;
 mod config;
+mod crypto_discovery;
 mod discovery;
 mod execution;
 mod kalshi;
@@ -44,16 +45,17 @@ use tracing::{error, info, warn};
 
 use cache::TeamCache;
 use circuit_breaker::{CircuitBreaker, CircuitBreakerConfig};
-use config::{ARB_THRESHOLD, ENABLED_LEAGUES, WS_RECONNECT_DELAY_SECS};
+use config::{ARB_THRESHOLD, ENABLED_LEAGUES, WS_RECONNECT_DELAY_SECS, crypto_enabled};
+use crypto_discovery::CryptoDiscoveryClient;
 use discovery::DiscoveryClient;
 use execution::{ExecutionEngine, create_execution_channel, run_execution_loop};
 use kalshi::{KalshiConfig, KalshiApiClient};
 use polymarket_clob::{PolymarketAsyncClient, PreparedCreds, SharedAsyncClient};
 use position_tracker::{PositionTracker, create_position_channel, position_writer_loop};
-use metrics::{init_metrics, MetricsSnapshot};
+use metrics::init_metrics;
 use priority_config::PriorityConfig;
 use priority_queue::{SharedPriorityQueue, priority_resort_loop, scan_and_queue_opportunities};
-use types::{GlobalState, PriceCents};
+use types::{GlobalState, MarketPair, MarketType, PriceCents};
 
 /// Polymarket CLOB API host
 const POLY_CLOB_HOST: &str = "https://clob.polymarket.com";
@@ -175,7 +177,66 @@ async fn main() -> Result<()> {
         }
     }
 
-    if result.pairs.is_empty() {
+    // === CRYPTO DISCOVERY ===
+    // Discover crypto markets (BTC, ETH price brackets on Kalshi, up/down on Polymarket)
+    let crypto_pairs = if crypto_enabled() {
+        info!("₿ Crypto market discovery...");
+        let crypto_client = CryptoDiscoveryClient::new(
+            KalshiApiClient::new(KalshiConfig::from_env()?)
+        );
+        let crypto_result = crypto_client.discover_all().await;
+
+        // Convert Polymarket up/down markets to MarketPairs for same-platform arbitrage
+        let mut crypto_market_pairs = Vec::new();
+
+        for updown in &crypto_result.poly_updown_markets {
+            let pair = MarketPair {
+                pair_id: format!("crypto-{}-{}", updown.asset, updown.slug).into(),
+                league: "crypto".into(),
+                market_type: MarketType::UpDown,
+                description: updown.description.clone(),
+                // Use empty placeholder for Kalshi (Poly-only same-platform arb)
+                kalshi_event_ticker: "".into(),
+                kalshi_market_ticker: "".into(),
+                poly_slug: updown.slug.clone(),
+                poly_yes_token: updown.yes_token.clone(),
+                poly_no_token: updown.no_token.clone(),
+                line_value: None,
+                team_suffix: None,
+                game_start_time_secs: None,
+                expiration_time_secs: updown.settlement_time_secs,
+                is_live: false,
+            };
+            crypto_market_pairs.push(pair);
+        }
+
+        // Log crypto bracket groups (Kalshi same-platform arb - tracked separately)
+        if !crypto_result.kalshi_bracket_groups.is_empty() {
+            info!("   ₿ {} Kalshi bracket groups available for same-platform arb",
+                  crypto_result.kalshi_bracket_groups.len());
+            for group in &crypto_result.kalshi_bracket_groups {
+                info!("      - {} | {} brackets | {}",
+                      group.asset, group.brackets.len(), group.description);
+            }
+        }
+
+        if !crypto_result.errors.is_empty() {
+            for err in &crypto_result.errors {
+                warn!("   ₿ ⚠️ {}", err);
+            }
+        }
+
+        info!("   ₿ Converted {} Polymarket updown markets to MarketPairs",
+              crypto_market_pairs.len());
+
+        crypto_market_pairs
+    } else {
+        info!("₿ Crypto discovery disabled (set CRYPTO_ENABLED=1 to enable)");
+        Vec::new()
+    };
+
+    let total_pairs = result.pairs.len() + crypto_pairs.len();
+    if total_pairs == 0 {
         error!("No market pairs found!");
         return Ok(());
     }
@@ -188,11 +249,20 @@ async fn main() -> Result<()> {
               pair.market_type,
               pair.kalshi_market_ticker);
     }
+    for pair in &crypto_pairs {
+        info!("   ₿ {} | {} | Poly: {}",
+              pair.description,
+              pair.market_type,
+              pair.poly_slug);
+    }
 
-    // Build global state
+    // Build global state with both sports and crypto markets
     let state = Arc::new({
         let mut s = GlobalState::new();
         for pair in result.pairs {
+            s.add_pair(pair);
+        }
+        for pair in crypto_pairs {
             s.add_pair(pair);
         }
         info!("📡 Global state initialized: tracking {} markets", s.market_count());
