@@ -33,8 +33,8 @@ const KALSHI_GLOBAL_CONCURRENCY: usize = 1;
 /// Cache file path
 const DISCOVERY_CACHE_PATH: &str = ".discovery_cache.json";
 
-/// Cache TTL in seconds (2 hours - new markets appear every ~2 hours)
-const CACHE_TTL_SECS: u64 = 2 * 60 * 60;
+/// Cache TTL in seconds (30 minutes - faster refresh for new markets)
+const CACHE_TTL_SECS: u64 = 30 * 60;
 
 /// Task for parallel Gamma lookup
 struct GammaLookupTask {

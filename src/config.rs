@@ -19,14 +19,15 @@ pub const GAMMA_API_BASE: &str = "https://gamma-api.polymarket.com";
 pub const ARB_THRESHOLD: f64 = 0.995;
 
 /// Polymarket ping interval (seconds) - keep connection alive
-pub const POLY_PING_INTERVAL_SECS: u64 = 30;
+/// Reduced from 30s to 15s for faster stale connection detection
+pub const POLY_PING_INTERVAL_SECS: u64 = 15;
 
 /// Kalshi API rate limit delay (milliseconds between requests)
-/// Kalshi limit: 20 req/sec = 50ms minimum. We use 60ms for safety margin.
-pub const KALSHI_API_DELAY_MS: u64 = 60;
+/// Kalshi limit: 20 req/sec = 50ms minimum. We use 55ms to maximize speed.
+pub const KALSHI_API_DELAY_MS: u64 = 55;
 
-/// WebSocket reconnect delay (seconds)
-pub const WS_RECONNECT_DELAY_SECS: u64 = 5;
+/// WebSocket reconnect delay (seconds) - reduced for faster recovery
+pub const WS_RECONNECT_DELAY_SECS: u64 = 2;
 
 /// Which leagues to monitor (empty slice = all)
 pub const ENABLED_LEAGUES: &[&str] = &[];

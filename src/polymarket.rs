@@ -327,7 +327,8 @@ pub async fn run_ws(
             }
         }
 
-        if last_message.elapsed() > Duration::from_secs(120) {
+        // Reduced from 120s to 60s for faster stale detection
+        if last_message.elapsed() > Duration::from_secs(60) {
             warn!("[POLY] Stale connection, reconnecting...");
             break;
         }

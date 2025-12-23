@@ -49,7 +49,7 @@ impl Default for PriorityConfig {
     fn default() -> Self {
         Self {
             enabled: false,
-            queue_sort_interval_secs: 5,
+            queue_sort_interval_secs: 2,  // Reduced from 5s for faster arb detection
             min_liquidity_cents: 25_000,  // $250
             max_liquidity_cents: 250_000, // $2,500
             min_arb_percent: 1.0,
@@ -66,7 +66,7 @@ impl PriorityConfig {
     pub fn from_env() -> Self {
         Self {
             enabled: parse_env_bool("PRIORITY_MODE", false),
-            queue_sort_interval_secs: parse_env_u64("QUEUE_SORT_INTERVAL_SECS", 5),
+            queue_sort_interval_secs: parse_env_u64("QUEUE_SORT_INTERVAL_SECS", 2),  // Default 2s
             min_liquidity_cents: parse_env_u32("MIN_LIQUIDITY_CENTS", 25_000),
             max_liquidity_cents: parse_env_u32("MAX_LIQUIDITY_CENTS", 250_000),
             min_arb_percent: parse_env_f64("MIN_ARB_PERCENT", 1.0),
@@ -189,7 +189,7 @@ mod tests {
     fn test_default_config() {
         let config = PriorityConfig::default();
         assert!(!config.enabled);
-        assert_eq!(config.queue_sort_interval_secs, 5);
+        assert_eq!(config.queue_sort_interval_secs, 2);  // Optimized default
         assert_eq!(config.min_liquidity_cents, 25_000);
         assert_eq!(config.max_liquidity_cents, 250_000);
         assert_eq!(config.min_arb_percent, 1.0);

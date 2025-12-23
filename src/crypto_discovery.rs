@@ -34,8 +34,8 @@ const GAMMA_RATE_LIMIT_PER_SEC: u32 = 10;
 /// Max concurrent Gamma API requests
 const GAMMA_CONCURRENCY: usize = 5;
 
-/// Cache TTL for crypto markets (15 minutes - crypto is fast-moving)
-const CRYPTO_CACHE_TTL_SECS: u64 = 15 * 60;
+/// Cache TTL for crypto markets (5 minutes - crypto needs fast refresh)
+const CRYPTO_CACHE_TTL_SECS: u64 = 5 * 60;
 
 /// Crypto discovery cache file
 const CRYPTO_CACHE_PATH: &str = ".crypto_discovery_cache.json";
