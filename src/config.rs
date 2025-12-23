@@ -171,6 +171,23 @@ pub fn get_league_configs() -> Vec<LeagueConfig> {
             kalshi_series_total: Some("KXNCAAFTOTAL"),
             kalshi_series_btts: None,
         },
+        // College Basketball
+        LeagueConfig {
+            league_code: "ncaamb",
+            poly_prefix: "cbb",
+            kalshi_series_game: "KXNCAAMBGAME",
+            kalshi_series_spread: Some("KXNCAAMBSPREAD"),
+            kalshi_series_total: Some("KXNCAAMBTOTAL"),
+            kalshi_series_btts: None,
+        },
+        LeagueConfig {
+            league_code: "ncaawb",
+            poly_prefix: "wcbb",
+            kalshi_series_game: "KXNCAAWBGAME",
+            kalshi_series_spread: Some("KXNCAAWBSPREAD"),
+            kalshi_series_total: Some("KXNCAAWBTOTAL"),
+            kalshi_series_btts: None,
+        },
     ]
 }
 
