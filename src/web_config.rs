@@ -1,7 +1,7 @@
 //! Web-based configuration UI for the arbitrage bot.
 //!
-//! Provides a REST API and HTML dashboard to adjust bot settings
-//! without SSH access. Runs on port 8080 by default.
+//! Provides a REST API and HTML dashboard to adjust bot settings,
+//! monitor status, and view historical performance analytics.
 
 use axum::{
     extract::State,
@@ -13,6 +13,7 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::Instant;
 use tokio::sync::RwLock;
 use tracing::{info, warn};
 
@@ -113,11 +114,9 @@ impl RuntimeConfig {
 
     /// Save config to .env file (preserves other settings)
     pub fn save_to_env(&self, env_path: &str) -> Result<(), std::io::Error> {
-        // Read existing .env content
         let existing = std::fs::read_to_string(env_path).unwrap_or_default();
         let mut lines: Vec<String> = existing.lines().map(|s| s.to_string()).collect();
 
-        // Settings to update
         let updates: HashMap<&str, String> = [
             ("ARB_THRESHOLD_CENTS", self.arb_threshold_cents.to_string()),
             ("DRY_RUN", if self.dry_run { "1" } else { "0" }.to_string()),
@@ -133,11 +132,10 @@ impl RuntimeConfig {
             ("ENABLED_LEAGUES", self.enabled_leagues.clone()),
         ].into_iter().collect();
 
-        // Update existing lines or mark for addition
         let mut found: std::collections::HashSet<&str> = std::collections::HashSet::new();
         for line in lines.iter_mut() {
             for (key, value) in &updates {
-                if line.starts_with(&format!("{}=", key)) || line.starts_with(&format!("{}=", key)) {
+                if line.starts_with(&format!("{}=", key)) {
                     *line = format!("{}={}", key, value);
                     found.insert(key);
                     break;
@@ -145,7 +143,6 @@ impl RuntimeConfig {
             }
         }
 
-        // Add missing keys
         for (key, value) in &updates {
             if !found.contains(key) {
                 lines.push(format!("{}={}", key, value));
@@ -156,8 +153,61 @@ impl RuntimeConfig {
     }
 }
 
+/// Bot status information
+#[derive(Debug, Clone, Serialize)]
+pub struct BotStatus {
+    pub running: bool,
+    pub uptime_secs: u64,
+    pub uptime_formatted: String,
+    pub mode: String,
+    pub dry_run: bool,
+    pub priority_mode: bool,
+    pub crypto_enabled: bool,
+    pub markets_tracked: usize,
+    pub last_heartbeat_secs_ago: u64,
+}
+
+/// Analytics summary from trade log
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct AnalyticsSummary {
+    pub total_trades: u64,
+    pub successful_trades: u64,
+    pub rejected_trades: u64,
+    pub total_profit_cents: i64,
+    pub total_volume_cents: u64,
+    pub total_fees_cents: u64,
+    pub avg_profit_per_trade_cents: f64,
+    pub trades_per_hour: f64,
+    pub profit_per_hour_cents: f64,
+    pub best_trade_profit_cents: i64,
+    pub worst_trade_profit_cents: i64,
+    pub avg_latency_ms: f64,
+    pub win_rate_percent: f64,
+    pub bankroll_cents: u64,
+    pub roi_percent: f64,
+    pub uptime_hours: f64,
+}
+
+/// Recent trade record for display
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TradeDisplay {
+    pub id: u64,
+    pub timestamp: String,
+    pub market_name: String,
+    pub arb_type: String,
+    pub profit_cents: i64,
+    pub volume_cents: u64,
+    pub status: String,
+    pub latency_ms: f64,
+}
+
 /// Shared state for web server
-pub type SharedConfig = Arc<RwLock<RuntimeConfig>>;
+pub struct WebState {
+    pub config: RwLock<RuntimeConfig>,
+    pub start_time: Instant,
+}
+
+pub type SharedWebState = Arc<WebState>;
 
 /// Settings metadata for the UI
 #[derive(Serialize)]
@@ -176,7 +226,7 @@ fn get_settings_meta() -> Vec<SettingMeta> {
         SettingMeta {
             key: "arb_threshold_cents",
             label: "Arb Threshold (cents)",
-            description: "Total cost threshold in cents. 995 = 99.5¢ = 0.5% profit minimum",
+            description: "Total cost threshold. 995 = 99.5¢ = 0.5% min profit. Lower = more aggressive.",
             setting_type: "number",
             requires_restart: false,
             min: Some(900),
@@ -185,7 +235,7 @@ fn get_settings_meta() -> Vec<SettingMeta> {
         SettingMeta {
             key: "dry_run",
             label: "Dry Run Mode",
-            description: "Simulate trades without executing real orders",
+            description: "ON = Simulate trades (safe). OFF = Execute real trades with real money!",
             setting_type: "toggle",
             requires_restart: false,
             min: None,
@@ -194,7 +244,7 @@ fn get_settings_meta() -> Vec<SettingMeta> {
         SettingMeta {
             key: "priority_mode",
             label: "Priority Mode",
-            description: "Enable priority queue for market scanning",
+            description: "Smart queue sorting by profit, liquidity, and expiration time",
             setting_type: "toggle",
             requires_restart: true,
             min: None,
@@ -203,7 +253,7 @@ fn get_settings_meta() -> Vec<SettingMeta> {
         SettingMeta {
             key: "crypto_enabled",
             label: "Crypto Markets",
-            description: "Enable BTC/ETH crypto market discovery",
+            description: "Enable BTC/ETH crypto market discovery and trading",
             setting_type: "toggle",
             requires_restart: true,
             min: None,
@@ -211,7 +261,7 @@ fn get_settings_meta() -> Vec<SettingMeta> {
         },
         SettingMeta {
             key: "min_liquidity_cents",
-            label: "Min Liquidity (cents)",
+            label: "Min Trade Size (cents)",
             description: "Minimum trade size per side. 25000 = $250",
             setting_type: "number",
             requires_restart: false,
@@ -220,7 +270,7 @@ fn get_settings_meta() -> Vec<SettingMeta> {
         },
         SettingMeta {
             key: "max_liquidity_cents",
-            label: "Max Liquidity (cents)",
+            label: "Max Trade Size (cents)",
             description: "Maximum trade size per side. 250000 = $2,500",
             setting_type: "number",
             requires_restart: false,
@@ -284,62 +334,176 @@ fn get_settings_meta() -> Vec<SettingMeta> {
     ]
 }
 
-/// GET /api/config - Get current configuration
-async fn get_config(State(config): State<SharedConfig>) -> impl IntoResponse {
-    let cfg = config.read().await;
+/// GET /api/config
+async fn get_config(State(state): State<SharedWebState>) -> impl IntoResponse {
+    let cfg = state.config.read().await;
     Json(cfg.clone())
 }
 
-/// GET /api/meta - Get settings metadata
+/// GET /api/meta
 async fn get_meta() -> impl IntoResponse {
     Json(get_settings_meta())
 }
 
-/// POST /api/config - Update configuration
+/// GET /api/status
+async fn get_status(State(state): State<SharedWebState>) -> impl IntoResponse {
+    let cfg = state.config.read().await;
+    let uptime = state.start_time.elapsed().as_secs();
+
+    let hours = uptime / 3600;
+    let mins = (uptime % 3600) / 60;
+    let secs = uptime % 60;
+    let uptime_formatted = if hours > 0 {
+        format!("{}h {}m {}s", hours, mins, secs)
+    } else if mins > 0 {
+        format!("{}m {}s", mins, secs)
+    } else {
+        format!("{}s", secs)
+    };
+
+    let mode = if cfg.dry_run { "DRY RUN" } else { "LIVE" };
+
+    let status = BotStatus {
+        running: true,
+        uptime_secs: uptime,
+        uptime_formatted,
+        mode: mode.to_string(),
+        dry_run: cfg.dry_run,
+        priority_mode: cfg.priority_mode,
+        crypto_enabled: cfg.crypto_enabled,
+        markets_tracked: 0, // Updated by heartbeat
+        last_heartbeat_secs_ago: 0,
+    };
+
+    Json(status)
+}
+
+/// GET /api/analytics
+async fn get_analytics() -> impl IntoResponse {
+    // Read summary from dashboard_data/summary.json
+    let summary_path = "./dashboard_data/summary.json";
+
+    let analytics = if let Ok(content) = std::fs::read_to_string(summary_path) {
+        if let Ok(summary) = serde_json::from_str::<serde_json::Value>(&content) {
+            let total_trades = summary.get("total_trades").and_then(|v| v.as_u64()).unwrap_or(0);
+            let successful = summary.get("successful_trades").and_then(|v| v.as_u64()).unwrap_or(0);
+            let profit = summary.get("total_profit_cents").and_then(|v| v.as_i64()).unwrap_or(0);
+            let volume = summary.get("total_volume_cents").and_then(|v| v.as_u64()).unwrap_or(0);
+            let bankroll = summary.get("bankroll_cents").and_then(|v| v.as_u64()).unwrap_or(100000);
+
+            let win_rate = if total_trades > 0 {
+                (successful as f64 / total_trades as f64) * 100.0
+            } else { 0.0 };
+
+            let roi = if bankroll > 0 {
+                (profit as f64 / bankroll as f64) * 100.0
+            } else { 0.0 };
+
+            AnalyticsSummary {
+                total_trades,
+                successful_trades: successful,
+                rejected_trades: summary.get("rejected_trades").and_then(|v| v.as_u64()).unwrap_or(0),
+                total_profit_cents: profit,
+                total_volume_cents: volume,
+                total_fees_cents: summary.get("total_fees_cents").and_then(|v| v.as_u64()).unwrap_or(0),
+                avg_profit_per_trade_cents: summary.get("avg_profit_per_trade_cents").and_then(|v| v.as_f64()).unwrap_or(0.0),
+                trades_per_hour: summary.get("trades_per_hour").and_then(|v| v.as_f64()).unwrap_or(0.0),
+                profit_per_hour_cents: summary.get("profit_per_hour_cents").and_then(|v| v.as_f64()).unwrap_or(0.0),
+                best_trade_profit_cents: summary.get("best_trade_profit_cents").and_then(|v| v.as_i64()).unwrap_or(0),
+                worst_trade_profit_cents: summary.get("worst_trade_profit_cents").and_then(|v| v.as_i64()).unwrap_or(0),
+                avg_latency_ms: summary.get("avg_latency_ms").and_then(|v| v.as_f64()).unwrap_or(0.0),
+                win_rate_percent: win_rate,
+                bankroll_cents: bankroll,
+                roi_percent: roi,
+                uptime_hours: 0.0,
+            }
+        } else {
+            AnalyticsSummary::default()
+        }
+    } else {
+        AnalyticsSummary::default()
+    };
+
+    Json(analytics)
+}
+
+/// GET /api/trades
+async fn get_trades() -> impl IntoResponse {
+    let trades_path = "./dashboard_data/trades.json";
+
+    let trades: Vec<TradeDisplay> = if let Ok(content) = std::fs::read_to_string(trades_path) {
+        if let Ok(all_trades) = serde_json::from_str::<Vec<serde_json::Value>>(&content) {
+            all_trades.iter().rev().take(50).map(|t| {
+                TradeDisplay {
+                    id: t.get("id").and_then(|v| v.as_u64()).unwrap_or(0),
+                    timestamp: t.get("timestamp").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                    market_name: t.get("market_name").and_then(|v| v.as_str()).unwrap_or("Unknown").to_string(),
+                    arb_type: t.get("arb_type").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                    profit_cents: t.get("profit_cents").and_then(|v| v.as_i64()).unwrap_or(0),
+                    volume_cents: t.get("volume_cents").and_then(|v| v.as_u64()).unwrap_or(0),
+                    status: t.get("status").and_then(|v| v.as_str()).unwrap_or("unknown").to_string(),
+                    latency_ms: t.get("latency_ms").and_then(|v| v.as_f64()).unwrap_or(0.0),
+                }
+            }).collect()
+        } else {
+            Vec::new()
+        }
+    } else {
+        Vec::new()
+    };
+
+    Json(trades)
+}
+
+/// POST /api/config
 async fn update_config(
-    State(config): State<SharedConfig>,
+    State(state): State<SharedWebState>,
     Json(new_config): Json<RuntimeConfig>,
 ) -> impl IntoResponse {
-    // Save to .env file
     if let Err(e) = new_config.save_to_env(".env") {
         warn!("[WEB] Failed to save config: {}", e);
         return (StatusCode::INTERNAL_SERVER_ERROR, "Failed to save config");
     }
 
-    // Update in-memory config
-    let mut cfg = config.write().await;
+    let mut cfg = state.config.write().await;
     *cfg = new_config;
 
     info!("[WEB] Config updated successfully");
     (StatusCode::OK, "Config saved")
 }
 
-/// POST /api/restart - Signal bot restart needed
+/// POST /api/restart
 async fn trigger_restart() -> impl IntoResponse {
     info!("[WEB] Restart requested via web UI");
-    // In a real implementation, this would signal the main loop to restart
-    // For now, we just acknowledge the request
     (StatusCode::OK, "Restart signal sent. Please restart the bot manually.")
 }
 
-/// GET / - Serve the HTML dashboard
+/// GET /
 async fn serve_dashboard() -> Html<&'static str> {
     Html(DASHBOARD_HTML)
 }
 
 /// Create and run the web server
-pub async fn run_web_server(config: SharedConfig) {
+pub async fn run_web_server(config: Arc<RwLock<RuntimeConfig>>) {
     let port = std::env::var("WEB_CONFIG_PORT")
         .ok()
         .and_then(|p| p.parse().ok())
         .unwrap_or(DEFAULT_PORT);
 
+    let state = Arc::new(WebState {
+        config: RwLock::new(config.read().await.clone()),
+        start_time: Instant::now(),
+    });
+
     let app = Router::new()
         .route("/", get(serve_dashboard))
         .route("/api/config", get(get_config).post(update_config))
         .route("/api/meta", get(get_meta))
+        .route("/api/status", get(get_status))
+        .route("/api/analytics", get(get_analytics))
+        .route("/api/trades", get(get_trades))
         .route("/api/restart", post(trigger_restart))
-        .with_state(config);
+        .with_state(state);
 
     let addr = format!("0.0.0.0:{}", port);
     info!("[WEB] Starting config dashboard on http://{}", addr);
@@ -350,13 +514,13 @@ pub async fn run_web_server(config: SharedConfig) {
     }
 }
 
-/// Embedded HTML dashboard
-const DASHBOARD_HTML: &str = r#"<!DOCTYPE html>
+/// Embedded HTML dashboard with status bar and analytics
+const DASHBOARD_HTML: &str = r##"<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Arb Bot Config</title>
+    <title>Arb Bot Dashboard</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body {
@@ -364,19 +528,77 @@ const DASHBOARD_HTML: &str = r#"<!DOCTYPE html>
             background: #0d1117;
             color: #c9d1d9;
             padding: 20px;
-            max-width: 800px;
+            max-width: 1200px;
             margin: 0 auto;
         }
-        h1 {
-            color: #58a6ff;
-            margin-bottom: 8px;
+        h1 { color: #58a6ff; margin-bottom: 8px; font-size: 24px; }
+        .subtitle { color: #8b949e; margin-bottom: 16px; font-size: 14px; }
+
+        /* Status Bar */
+        .status-bar {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 12px;
+            margin-bottom: 20px;
+        }
+        .status-card {
+            background: #161b22;
+            border: 1px solid #30363d;
+            border-radius: 8px;
+            padding: 16px;
+            text-align: center;
+        }
+        .status-card.live { border-color: #f85149; }
+        .status-card.dry { border-color: #238636; }
+        .status-value {
             font-size: 24px;
+            font-weight: 700;
+            color: #f0f6fc;
         }
-        .subtitle {
+        .status-value.positive { color: #3fb950; }
+        .status-value.negative { color: #f85149; }
+        .status-value.warning { color: #d29922; }
+        .status-label {
+            font-size: 12px;
             color: #8b949e;
-            margin-bottom: 24px;
-            font-size: 14px;
+            margin-top: 4px;
+            text-transform: uppercase;
         }
+        .mode-badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 14px;
+            font-weight: 600;
+        }
+        .mode-badge.live { background: #f85149; color: white; }
+        .mode-badge.dry { background: #238636; color: white; }
+
+        /* Tabs */
+        .tabs {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 20px;
+            border-bottom: 1px solid #30363d;
+            padding-bottom: 8px;
+        }
+        .tab {
+            padding: 8px 16px;
+            background: transparent;
+            border: none;
+            color: #8b949e;
+            cursor: pointer;
+            font-size: 14px;
+            border-radius: 6px;
+        }
+        .tab.active { background: #21262d; color: #f0f6fc; }
+        .tab:hover { color: #f0f6fc; }
+
+        /* Tab content */
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+
+        /* Sections */
         .section {
             background: #161b22;
             border: 1px solid #30363d;
@@ -392,6 +614,30 @@ const DASHBOARD_HTML: &str = r#"<!DOCTYPE html>
             padding-bottom: 8px;
             border-bottom: 1px solid #30363d;
         }
+
+        /* Analytics Grid */
+        .analytics-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 16px;
+        }
+        .metric-card {
+            background: #0d1117;
+            border-radius: 6px;
+            padding: 16px;
+        }
+        .metric-value {
+            font-size: 28px;
+            font-weight: 700;
+            color: #f0f6fc;
+        }
+        .metric-label {
+            font-size: 12px;
+            color: #8b949e;
+            margin-top: 4px;
+        }
+
+        /* Settings */
         .setting {
             display: flex;
             justify-content: space-between;
@@ -400,9 +646,7 @@ const DASHBOARD_HTML: &str = r#"<!DOCTYPE html>
             border-bottom: 1px solid #21262d;
         }
         .setting:last-child { border-bottom: none; }
-        .setting-info {
-            flex: 1;
-        }
+        .setting-info { flex: 1; }
         .setting-label {
             color: #f0f6fc;
             font-weight: 500;
@@ -423,10 +667,8 @@ const DASHBOARD_HTML: &str = r#"<!DOCTYPE html>
             font-size: 12px;
             margin-top: 4px;
         }
-        .setting-control {
-            min-width: 150px;
-            text-align: right;
-        }
+        .setting-control { min-width: 150px; text-align: right; }
+
         input[type="number"], input[type="text"] {
             background: #0d1117;
             border: 1px solid #30363d;
@@ -436,20 +678,14 @@ const DASHBOARD_HTML: &str = r#"<!DOCTYPE html>
             width: 120px;
             font-size: 14px;
         }
-        input[type="number"]:focus, input[type="text"]:focus {
-            border-color: #58a6ff;
-            outline: none;
-        }
+        input:focus { border-color: #58a6ff; outline: none; }
+
         .toggle {
             position: relative;
             width: 50px;
             height: 26px;
         }
-        .toggle input {
-            opacity: 0;
-            width: 0;
-            height: 0;
-        }
+        .toggle input { opacity: 0; width: 0; height: 0; }
         .toggle-slider {
             position: absolute;
             cursor: pointer;
@@ -469,17 +705,16 @@ const DASHBOARD_HTML: &str = r#"<!DOCTYPE html>
             border-radius: 50%;
             transition: 0.3s;
         }
-        .toggle input:checked + .toggle-slider {
-            background: #238636;
-        }
-        .toggle input:checked + .toggle-slider:before {
-            transform: translateX(24px);
-        }
+        .toggle input:checked + .toggle-slider { background: #238636; }
+        .toggle input:checked + .toggle-slider:before { transform: translateX(24px); }
+        .toggle.danger input:checked + .toggle-slider { background: #f85149; }
+
+        /* Buttons */
         .btn {
             background: #238636;
             color: white;
             border: none;
-            padding: 12px 24px;
+            padding: 10px 20px;
             border-radius: 6px;
             font-size: 14px;
             font-weight: 600;
@@ -487,86 +722,200 @@ const DASHBOARD_HTML: &str = r#"<!DOCTYPE html>
             margin-right: 8px;
         }
         .btn:hover { background: #2ea043; }
-        .btn-secondary {
-            background: #30363d;
-        }
+        .btn-secondary { background: #30363d; }
         .btn-secondary:hover { background: #3d444d; }
-        .btn-danger {
-            background: #da3633;
-        }
+        .btn-danger { background: #da3633; }
         .btn-danger:hover { background: #f85149; }
-        .actions {
-            margin-top: 20px;
-            display: flex;
-            gap: 12px;
+        .actions { margin-top: 20px; display: flex; gap: 12px; }
+
+        /* Trade Table */
+        .trade-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
         }
-        .status {
+        .trade-table th {
+            text-align: left;
+            padding: 12px 8px;
+            border-bottom: 1px solid #30363d;
+            color: #8b949e;
+            font-weight: 500;
+        }
+        .trade-table td {
+            padding: 10px 8px;
+            border-bottom: 1px solid #21262d;
+        }
+        .trade-table tr:hover { background: #21262d; }
+        .profit-positive { color: #3fb950; }
+        .profit-negative { color: #f85149; }
+        .status-executed { color: #3fb950; }
+        .status-dryrun { color: #58a6ff; }
+        .status-rejected { color: #f85149; }
+
+        /* Status indicators */
+        .status-dot {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            margin-right: 6px;
+        }
+        .status-dot.green { background: #3fb950; }
+        .status-dot.red { background: #f85149; }
+        .status-dot.yellow { background: #d29922; }
+
+        .status-msg {
             padding: 12px;
             border-radius: 6px;
             margin-top: 16px;
             display: none;
         }
-        .status.success {
-            display: block;
-            background: #238636;
-            color: white;
-        }
-        .status.error {
-            display: block;
-            background: #da3633;
-            color: white;
-        }
-        .status.warning {
-            display: block;
-            background: #9e6a03;
-            color: white;
-        }
-        .loader {
-            display: none;
-            color: #8b949e;
-            padding: 20px;
-            text-align: center;
-        }
+        .status-msg.success { display: block; background: #238636; color: white; }
+        .status-msg.error { display: block; background: #da3633; color: white; }
+        .status-msg.warning { display: block; background: #9e6a03; color: white; }
+
+        .loader { display: none; color: #8b949e; padding: 20px; text-align: center; }
         #content { display: none; }
+
+        /* Responsive */
+        @media (max-width: 600px) {
+            .status-bar { grid-template-columns: repeat(2, 1fr); }
+            .setting { flex-direction: column; align-items: flex-start; gap: 8px; }
+            .setting-control { text-align: left; }
+        }
     </style>
 </head>
 <body>
-    <h1>Arbitrage Bot Configuration</h1>
-    <p class="subtitle">Adjust settings in real-time. Settings with <span class="restart-badge">RESTART</span> require a bot restart to take effect.</p>
+    <h1>Arbitrage Bot Dashboard</h1>
+    <p class="subtitle">Real-time monitoring and configuration</p>
 
-    <div class="loader" id="loader">Loading configuration...</div>
-    <div id="status" class="status"></div>
+    <div class="loader" id="loader">Loading...</div>
+    <div id="status-msg" class="status-msg"></div>
 
     <div id="content">
-        <div class="section">
-            <div class="section-title">Trading Settings</div>
-            <div id="trading-settings"></div>
+        <!-- Status Bar -->
+        <div class="status-bar" id="status-bar">
+            <div class="status-card" id="mode-card">
+                <div class="status-value"><span class="mode-badge dry" id="mode-badge">DRY RUN</span></div>
+                <div class="status-label">Trading Mode</div>
+            </div>
+            <div class="status-card">
+                <div class="status-value" id="uptime">0s</div>
+                <div class="status-label">Uptime</div>
+            </div>
+            <div class="status-card">
+                <div class="status-value" id="total-profit">$0.00</div>
+                <div class="status-label">Total Profit</div>
+            </div>
+            <div class="status-card">
+                <div class="status-value" id="total-trades">0</div>
+                <div class="status-label">Total Trades</div>
+            </div>
+            <div class="status-card">
+                <div class="status-value" id="win-rate">0%</div>
+                <div class="status-label">Win Rate</div>
+            </div>
+            <div class="status-card">
+                <div class="status-value" id="roi">0%</div>
+                <div class="status-label">ROI</div>
+            </div>
         </div>
 
-        <div class="section">
-            <div class="section-title">Liquidity Limits</div>
-            <div id="liquidity-settings"></div>
+        <!-- Tabs -->
+        <div class="tabs">
+            <button class="tab active" onclick="showTab('analytics')">Analytics</button>
+            <button class="tab" onclick="showTab('settings')">Settings</button>
+            <button class="tab" onclick="showTab('trades')">Trade History</button>
         </div>
 
-        <div class="section">
-            <div class="section-title">Circuit Breaker</div>
-            <div id="circuit-settings"></div>
+        <!-- Analytics Tab -->
+        <div id="tab-analytics" class="tab-content active">
+            <div class="section">
+                <div class="section-title">Performance Metrics</div>
+                <div class="analytics-grid">
+                    <div class="metric-card">
+                        <div class="metric-value" id="profit-hour">$0.00</div>
+                        <div class="metric-label">Profit / Hour</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-value" id="trades-hour">0</div>
+                        <div class="metric-label">Trades / Hour</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-value" id="avg-profit">$0.00</div>
+                        <div class="metric-label">Avg Profit / Trade</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-value" id="avg-latency">0ms</div>
+                        <div class="metric-label">Avg Latency</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-value" id="best-trade">$0.00</div>
+                        <div class="metric-label">Best Trade</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-value" id="total-volume">$0</div>
+                        <div class="metric-label">Total Volume</div>
+                    </div>
+                </div>
+            </div>
         </div>
 
-        <div class="section">
-            <div class="section-title">Timing & Performance</div>
-            <div id="timing-settings"></div>
+        <!-- Settings Tab -->
+        <div id="tab-settings" class="tab-content">
+            <div class="section">
+                <div class="section-title">Trading Controls</div>
+                <div id="trading-settings"></div>
+            </div>
+
+            <div class="section">
+                <div class="section-title">Position Limits</div>
+                <div id="liquidity-settings"></div>
+            </div>
+
+            <div class="section">
+                <div class="section-title">Circuit Breaker</div>
+                <div id="circuit-settings"></div>
+            </div>
+
+            <div class="section">
+                <div class="section-title">Performance Tuning</div>
+                <div id="timing-settings"></div>
+            </div>
+
+            <div class="section">
+                <div class="section-title">Market Selection</div>
+                <div id="market-settings"></div>
+            </div>
+
+            <div class="actions">
+                <button class="btn" onclick="saveConfig()">Save Changes</button>
+                <button class="btn btn-secondary" onclick="loadConfig()">Reset</button>
+                <button class="btn btn-danger" onclick="restartBot()">Restart Bot</button>
+            </div>
         </div>
 
-        <div class="section">
-            <div class="section-title">Market Selection</div>
-            <div id="market-settings"></div>
-        </div>
-
-        <div class="actions">
-            <button class="btn" onclick="saveConfig()">Save Changes</button>
-            <button class="btn btn-secondary" onclick="loadConfig()">Reset</button>
-            <button class="btn btn-danger" onclick="restartBot()">Restart Bot</button>
+        <!-- Trades Tab -->
+        <div id="tab-trades" class="tab-content">
+            <div class="section">
+                <div class="section-title">Recent Trades (Last 50)</div>
+                <table class="trade-table">
+                    <thead>
+                        <tr>
+                            <th>Time</th>
+                            <th>Market</th>
+                            <th>Type</th>
+                            <th>Profit</th>
+                            <th>Volume</th>
+                            <th>Latency</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody id="trades-body">
+                        <tr><td colspan="7" style="text-align:center;color:#8b949e">No trades yet</td></tr>
+                    </tbody>
+                </table>
+            </div>
         </div>
     </div>
 
@@ -589,27 +938,109 @@ const DASHBOARD_HTML: &str = r#"<!DOCTYPE html>
             'enabled_leagues': 'market-settings',
         };
 
-        async function loadConfig() {
+        function showTab(name) {
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+            document.querySelector(`[onclick="showTab('${name}')"]`).classList.add('active');
+            document.getElementById('tab-' + name).classList.add('active');
+        }
+
+        function formatCents(cents) {
+            return '$' + (cents / 100).toFixed(2);
+        }
+
+        async function loadAll() {
             document.getElementById('loader').style.display = 'block';
             document.getElementById('content').style.display = 'none';
 
             try {
-                const [configRes, metaRes] = await Promise.all([
+                const [configRes, metaRes, statusRes, analyticsRes, tradesRes] = await Promise.all([
                     fetch('/api/config'),
-                    fetch('/api/meta')
+                    fetch('/api/meta'),
+                    fetch('/api/status'),
+                    fetch('/api/analytics'),
+                    fetch('/api/trades')
                 ]);
+
                 config = await configRes.json();
                 meta = await metaRes.json();
+                const status = await statusRes.json();
+                const analytics = await analyticsRes.json();
+                const trades = await tradesRes.json();
+
+                updateStatus(status);
+                updateAnalytics(analytics);
+                updateTrades(trades);
                 renderSettings();
+
                 document.getElementById('content').style.display = 'block';
             } catch (e) {
-                showStatus('Failed to load config: ' + e.message, 'error');
+                showStatus('Failed to load: ' + e.message, 'error');
             }
             document.getElementById('loader').style.display = 'none';
         }
 
+        function updateStatus(status) {
+            document.getElementById('uptime').textContent = status.uptime_formatted;
+
+            const modeBadge = document.getElementById('mode-badge');
+            const modeCard = document.getElementById('mode-card');
+            if (status.dry_run) {
+                modeBadge.textContent = 'DRY RUN';
+                modeBadge.className = 'mode-badge dry';
+                modeCard.className = 'status-card dry';
+            } else {
+                modeBadge.textContent = 'LIVE';
+                modeBadge.className = 'mode-badge live';
+                modeCard.className = 'status-card live';
+            }
+        }
+
+        function updateAnalytics(a) {
+            const profitEl = document.getElementById('total-profit');
+            profitEl.textContent = formatCents(a.total_profit_cents);
+            profitEl.className = 'status-value ' + (a.total_profit_cents >= 0 ? 'positive' : 'negative');
+
+            document.getElementById('total-trades').textContent = a.total_trades;
+            document.getElementById('win-rate').textContent = a.win_rate_percent.toFixed(1) + '%';
+
+            const roiEl = document.getElementById('roi');
+            roiEl.textContent = a.roi_percent.toFixed(2) + '%';
+            roiEl.className = 'status-value ' + (a.roi_percent >= 0 ? 'positive' : 'negative');
+
+            document.getElementById('profit-hour').textContent = formatCents(a.profit_per_hour_cents);
+            document.getElementById('trades-hour').textContent = a.trades_per_hour.toFixed(1);
+            document.getElementById('avg-profit').textContent = formatCents(a.avg_profit_per_trade_cents);
+            document.getElementById('avg-latency').textContent = a.avg_latency_ms.toFixed(1) + 'ms';
+            document.getElementById('best-trade').textContent = formatCents(a.best_trade_profit_cents);
+            document.getElementById('total-volume').textContent = formatCents(a.total_volume_cents);
+        }
+
+        function updateTrades(trades) {
+            const tbody = document.getElementById('trades-body');
+            if (!trades.length) {
+                tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#8b949e">No trades yet</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = trades.map(t => {
+                const time = new Date(t.timestamp).toLocaleTimeString();
+                const profitClass = t.profit_cents >= 0 ? 'profit-positive' : 'profit-negative';
+                const statusClass = t.status === 'executed' ? 'status-executed' :
+                                   t.status === 'dryrun' ? 'status-dryrun' : 'status-rejected';
+                return `<tr>
+                    <td>${time}</td>
+                    <td>${t.market_name.substring(0, 30)}</td>
+                    <td>${t.arb_type}</td>
+                    <td class="${profitClass}">${formatCents(t.profit_cents)}</td>
+                    <td>${formatCents(t.volume_cents)}</td>
+                    <td>${t.latency_ms.toFixed(1)}ms</td>
+                    <td class="${statusClass}">${t.status}</td>
+                </tr>`;
+            }).join('');
+        }
+
         function renderSettings() {
-            // Clear sections
             Object.values(sections).forEach(id => {
                 const el = document.getElementById(id);
                 if (el) el.innerHTML = '';
@@ -626,8 +1057,9 @@ const DASHBOARD_HTML: &str = r#"<!DOCTYPE html>
                 const value = config[setting.key];
 
                 if (setting.setting_type === 'toggle') {
+                    const isDanger = setting.key === 'dry_run';
                     control = `
-                        <label class="toggle">
+                        <label class="toggle ${isDanger ? 'danger' : ''}">
                             <input type="checkbox" id="${setting.key}" ${value ? 'checked' : ''}>
                             <span class="toggle-slider"></span>
                         </label>
@@ -680,12 +1112,8 @@ const DASHBOARD_HTML: &str = r#"<!DOCTYPE html>
 
                 if (res.ok) {
                     config = newConfig;
-                    const needsRestart = meta.some(m => m.requires_restart && config[m.key] !== newConfig[m.key]);
-                    if (needsRestart) {
-                        showStatus('Config saved! Some changes require a bot restart.', 'warning');
-                    } else {
-                        showStatus('Config saved successfully!', 'success');
-                    }
+                    showStatus('Config saved! Some changes may require a restart.', 'success');
+                    loadAll(); // Refresh status
                 } else {
                     showStatus('Failed to save config', 'error');
                 }
@@ -706,17 +1134,32 @@ const DASHBOARD_HTML: &str = r#"<!DOCTYPE html>
         }
 
         function showStatus(msg, type) {
-            const el = document.getElementById('status');
+            const el = document.getElementById('status-msg');
             el.textContent = msg;
-            el.className = 'status ' + type;
-            setTimeout(() => { el.className = 'status'; }, 5000);
+            el.className = 'status-msg ' + type;
+            setTimeout(() => { el.className = 'status-msg'; }, 5000);
         }
 
-        loadConfig();
+        async function loadConfig() {
+            await loadAll();
+        }
+
+        // Initial load and auto-refresh
+        loadAll();
+        setInterval(async () => {
+            try {
+                const [statusRes, analyticsRes] = await Promise.all([
+                    fetch('/api/status'),
+                    fetch('/api/analytics')
+                ]);
+                updateStatus(await statusRes.json());
+                updateAnalytics(await analyticsRes.json());
+            } catch (e) {}
+        }, 5000); // Refresh every 5 seconds
     </script>
 </body>
 </html>
-"#;
+"##;
 
 #[cfg(test)]
 mod tests {

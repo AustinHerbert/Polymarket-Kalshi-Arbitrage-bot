@@ -104,13 +104,13 @@ async fn main() -> Result<()> {
     info!("   Metrics: ENABLED (summary every hour, saved to metrics_*.json)");
 
     // Start web configuration dashboard
-    let web_config = Arc::new(RwLock::new(web_config::RuntimeConfig::from_env()));
-    let web_config_clone = web_config.clone();
+    let web_cfg = Arc::new(RwLock::new(web_config::RuntimeConfig::from_env()));
+    let web_cfg_clone = web_cfg.clone();
     tokio::spawn(async move {
-        web_config::run_web_server(web_config_clone).await;
+        web_config::run_web_server(web_cfg_clone).await;
     });
     let web_port = std::env::var("WEB_CONFIG_PORT").unwrap_or_else(|_| "8080".to_string());
-    info!("   Web Config: http://0.0.0.0:{}", web_port);
+    info!("   Web Dashboard: http://0.0.0.0:{}", web_port);
 
     // Initialize trade logger for dashboard
     let bankroll_cents = std::env::var("BANKROLL")
