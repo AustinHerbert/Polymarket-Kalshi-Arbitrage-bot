@@ -6,7 +6,8 @@
 use std::fs::{self, OpenOptions};
 use std::io::{BufWriter, Write};
 use std::path::Path;
-use std::sync::Mutex;
+use std::sync::atomic::{AtomicU64, Ordering};
+use parking_lot::Mutex;
 use serde::{Serialize, Deserialize};
 use chrono::{DateTime, Utc};
 
@@ -123,11 +124,13 @@ pub struct DailyProjection {
 }
 
 /// Trade logger that persists to JSON files
+/// Uses parking_lot::Mutex for faster synchronous locking
 pub struct TradeLogger {
     trades_file: String,
     summary_file: String,
     trades: Mutex<Vec<TradeRecord>>,
-    next_id: Mutex<u64>,
+    /// Atomic counter for trade IDs - avoids lock contention
+    next_id: AtomicU64,
     start_time: DateTime<Utc>,
     is_dry_run: bool,
     bankroll_cents: u64,
@@ -165,7 +168,7 @@ impl TradeLogger {
             trades_file,
             summary_file,
             trades: Mutex::new(trades),
-            next_id: Mutex::new(next_id),
+            next_id: AtomicU64::new(next_id),
             start_time: Utc::now(),
             is_dry_run,
             bankroll_cents,
@@ -173,6 +176,8 @@ impl TradeLogger {
     }
 
     /// Log a trade (executed or rejected)
+    /// Uses atomic fetch_add for lock-free ID generation
+    #[inline]
     pub fn log_trade(
         &self,
         market_id: u16,
@@ -188,10 +193,8 @@ impl TradeLogger {
         status: TradeStatus,
         rejection_reason: Option<&str>,
     ) {
-        let mut id_lock = self.next_id.lock().unwrap();
-        let id = *id_lock;
-        *id_lock += 1;
-        drop(id_lock);
+        // Lock-free ID generation with atomic increment
+        let id = self.next_id.fetch_add(1, Ordering::Relaxed);
 
         let record = TradeRecord {
             id,
@@ -211,11 +214,8 @@ impl TradeLogger {
             is_dry_run: self.is_dry_run,
         };
 
-        // Add to in-memory list
-        {
-            let mut trades = self.trades.lock().unwrap();
-            trades.push(record);
-        }
+        // Add to in-memory list - parking_lot Mutex is faster
+        self.trades.lock().push(record);
 
         // Persist to file
         self.save();
@@ -223,7 +223,7 @@ impl TradeLogger {
 
     /// Save trades and summary to disk
     fn save(&self) {
-        let trades = self.trades.lock().unwrap();
+        let trades = self.trades.lock();
 
         // Save trades
         if let Ok(file) = OpenOptions::new()
@@ -291,25 +291,19 @@ impl TradeLogger {
 
     /// Get current summary
     pub fn get_summary(&self) -> TradeSummary {
-        let trades = self.trades.lock().unwrap();
+        let trades = self.trades.lock();
         self.calculate_summary(&trades)
     }
 
     /// Get all trades
     pub fn get_trades(&self) -> Vec<TradeRecord> {
-        self.trades.lock().unwrap().clone()
+        self.trades.lock().clone()
     }
 
     /// Clear all trades (for testing)
     pub fn clear(&self) {
-        let mut trades = self.trades.lock().unwrap();
-        trades.clear();
-        drop(trades);
-
-        let mut id = self.next_id.lock().unwrap();
-        *id = 1;
-        drop(id);
-
+        self.trades.lock().clear();
+        self.next_id.store(1, Ordering::Relaxed);
         self.save();
     }
 }

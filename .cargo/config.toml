@@ -1,0 +1,26 @@
+# Build configuration for maximum performance
+# These settings enable CPU-specific optimizations
+
+[build]
+# Use all CPU cores for parallel compilation
+jobs = 8
+
+[target.x86_64-unknown-linux-gnu]
+# Enable native CPU optimizations - SIMD, AVX, etc.
+rustflags = ["-C", "target-cpu=native"]
+
+[target.x86_64-unknown-linux-musl]
+rustflags = ["-C", "target-cpu=native"]
+
+[target.aarch64-unknown-linux-gnu]
+rustflags = ["-C", "target-cpu=native"]
+
+[target.x86_64-apple-darwin]
+rustflags = ["-C", "target-cpu=native"]
+
+[target.aarch64-apple-darwin]
+rustflags = ["-C", "target-cpu=native"]
+
+# Alias for fast release builds
+[alias]
+br = "build --release"

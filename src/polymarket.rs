@@ -174,11 +174,58 @@ fn increment_date_in_slug(slug: &str) -> Option<String> {
 // =============================================================================
 
 /// Parse size from Polymarket (format: "123.45" dollars)
+/// Optimized fast path for common formats to avoid f64 parsing
 #[inline(always)]
 fn parse_size(s: &str) -> SizeCents {
-    // Parse as f64 and convert to cents
+    let bytes = s.as_bytes();
+    let len = bytes.len();
+
+    // Fast path: Parse integer part and 2-digit decimal directly
+    // Common formats: "123.45", "12.34", "1234.56"
+    if len >= 4 {
+        // Find decimal point
+        let mut dot_pos = 0;
+        for i in 0..len {
+            if bytes[i] == b'.' {
+                dot_pos = i;
+                break;
+            }
+        }
+
+        if dot_pos > 0 && dot_pos + 2 < len {
+            // Parse integer part
+            let mut integer: u32 = 0;
+            for i in 0..dot_pos {
+                let d = bytes[i].wrapping_sub(b'0');
+                if d > 9 {
+                    // Not a digit, fall through to slow path
+                    return parse_size_slow(s);
+                }
+                integer = integer * 10 + d as u32;
+            }
+
+            // Parse first two decimal digits
+            let d1 = bytes[dot_pos + 1].wrapping_sub(b'0');
+            let d2 = bytes[dot_pos + 2].wrapping_sub(b'0');
+
+            if d1 < 10 && d2 < 10 {
+                // Convert to cents: integer * 100 + decimals
+                let cents = integer * 100 + (d1 as u32 * 10) + d2 as u32;
+                // Cap at u16::MAX
+                return cents.min(u16::MAX as u32) as SizeCents;
+            }
+        }
+    }
+
+    parse_size_slow(s)
+}
+
+/// Fallback slow path for unusual formats
+#[inline(never)]
+#[cold]
+fn parse_size_slow(s: &str) -> SizeCents {
     s.parse::<f64>()
-        .map(|size| (size * 100.0).round() as SizeCents)
+        .map(|size| (size * 100.0).round().min(u16::MAX as f64) as SizeCents)
         .unwrap_or(0)
 }
 

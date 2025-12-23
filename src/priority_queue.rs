@@ -10,8 +10,9 @@
 use std::cmp::Ordering;
 use std::collections::BinaryHeap;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
 use std::time::{SystemTime, UNIX_EPOCH};
-use tokio::sync::RwLock;
+use parking_lot::RwLock;
 use tracing::{debug, info};
 
 use crate::priority_config::PriorityConfig;
@@ -284,9 +285,12 @@ impl PriorityQueue {
 }
 
 /// Shared priority queue wrapper for concurrent access
+/// Uses parking_lot for faster synchronous locking and atomic resort check
 pub struct SharedPriorityQueue {
     inner: RwLock<PriorityQueue>,
     config: PriorityConfig,
+    /// Atomic timestamp for lockless resort check
+    last_resort_secs: AtomicU64,
 }
 
 impl SharedPriorityQueue {
@@ -296,48 +300,81 @@ impl SharedPriorityQueue {
         Self {
             inner: RwLock::new(queue),
             config,
+            last_resort_secs: AtomicU64::new(current_unix_secs()),
         }
     }
 
-    /// Push an opportunity to the queue
+    /// Push an opportunity to the queue (non-blocking with parking_lot)
+    #[inline]
     pub async fn push(&self, opp: PrioritizedOpportunity) {
-        let mut queue = self.inner.write().await;
-        queue.push(opp);
+        // parking_lot locks are synchronous but fast - no need for async
+        self.inner.write().push(opp);
     }
 
     /// Push an opportunity from an execution request
+    #[inline]
     pub async fn push_from_request(&self, request: FastExecutionRequest, pair: Arc<MarketPair>) {
         let opp = PrioritizedOpportunity::new(request, pair, &self.config);
         self.push(opp).await;
     }
 
     /// Pop the highest priority opportunity
+    /// Uses atomic check to avoid lock for resort decision
+    #[inline]
     pub async fn pop(&self) -> Option<PrioritizedOpportunity> {
-        let mut queue = self.inner.write().await;
+        // Fast atomic check for resort - avoids lock contention
+        let now = current_unix_secs();
+        let last = self.last_resort_secs.load(AtomicOrdering::Relaxed);
 
-        // Check if we need to resort
-        if queue.needs_resort() {
-            queue.resort();
+        if now - last >= self.config.queue_sort_interval_secs {
+            // Try to claim the resort (compare-and-swap)
+            if self.last_resort_secs.compare_exchange(
+                last, now,
+                AtomicOrdering::AcqRel,
+                AtomicOrdering::Relaxed
+            ).is_ok() {
+                // We won the race - do the resort
+                self.inner.write().resort();
+            }
         }
 
-        queue.pop()
+        // Fast pop with parking_lot
+        self.inner.write().pop()
+    }
+
+    /// Pop without resort check - for ultra-low-latency path
+    #[inline]
+    pub fn pop_fast(&self) -> Option<PrioritizedOpportunity> {
+        self.inner.write().pop()
     }
 
     /// Get the number of opportunities in the queue
     pub async fn len(&self) -> usize {
-        let queue = self.inner.read().await;
-        queue.len()
+        self.inner.read().len()
     }
 
     /// Check if the queue is empty
     pub async fn is_empty(&self) -> bool {
-        let queue = self.inner.read().await;
-        queue.is_empty()
+        self.inner.read().is_empty()
     }
 
     /// Get configuration reference
+    #[inline]
     pub fn config(&self) -> &PriorityConfig {
         &self.config
+    }
+
+    /// Force a resort of the queue (for background task)
+    #[inline]
+    pub fn force_resort(&self) -> (usize, usize) {
+        let mut inner = self.inner.write();
+        let before = inner.len();
+        if !inner.is_empty() {
+            inner.resort();
+        }
+        let after = inner.len();
+        self.last_resort_secs.store(current_unix_secs(), AtomicOrdering::Release);
+        (before, after)
     }
 }
 
@@ -472,17 +509,11 @@ pub async fn priority_resort_loop(queue: Arc<SharedPriorityQueue>) {
     loop {
         interval.tick().await;
 
-        {
-            let mut inner = queue.inner.write().await;
-            if !inner.is_empty() {
-                let before_len = inner.len();
-                inner.resort();
-                let after_len = inner.len();
+        // Use force_resort method (parking_lot locks are synchronous but fast)
+        let (before_len, after_len) = queue.force_resort();
 
-                if before_len != after_len {
-                    debug!("[PRIORITY] Resorted queue: {} -> {} opportunities", before_len, after_len);
-                }
-            }
+        if before_len != after_len {
+            debug!("[PRIORITY] Resorted queue: {} -> {} opportunities", before_len, after_len);
         }
     }
 }
