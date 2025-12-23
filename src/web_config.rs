@@ -250,8 +250,8 @@ fn get_settings_meta() -> Vec<SettingMeta> {
         },
         SettingMeta {
             key: "dry_run",
-            label: "Dry Run Mode",
-            description: "ON = Simulate trades (safe). OFF = Execute real trades with real money!",
+            label: "Paper Trading",
+            description: "Paper mode simulates trades without real money. Turn OFF for live trading.",
             setting_type: "toggle",
             requires_restart: false,
             min: None,
@@ -277,39 +277,39 @@ fn get_settings_meta() -> Vec<SettingMeta> {
         },
         SettingMeta {
             key: "min_liquidity_cents",
-            label: "Min Trade Size (cents)",
-            description: "Minimum trade size per side. 25000 = $250",
-            setting_type: "number",
+            label: "Min Trade Size ($)",
+            description: "Minimum trade size per side in dollars",
+            setting_type: "dollars",
             requires_restart: false,
-            min: Some(1000),
-            max: Some(1000000),
+            min: Some(10),
+            max: Some(10000),
         },
         SettingMeta {
             key: "max_liquidity_cents",
-            label: "Max Trade Size (cents)",
-            description: "Maximum trade size per side. 250000 = $2,500",
-            setting_type: "number",
+            label: "Max Trade Size ($)",
+            description: "Maximum trade size per side in dollars",
+            setting_type: "dollars",
             requires_restart: false,
-            min: Some(10000),
-            max: Some(10000000),
+            min: Some(100),
+            max: Some(100000),
         },
         SettingMeta {
             key: "max_daily_loss_cents",
-            label: "Max Daily Loss (cents)",
+            label: "Max Daily Loss ($)",
             description: "Circuit breaker: halt trading if daily loss exceeds this",
-            setting_type: "number",
+            setting_type: "dollars",
             requires_restart: false,
-            min: Some(10000),
-            max: Some(10000000),
+            min: Some(100),
+            max: Some(100000),
         },
         SettingMeta {
             key: "max_position_size_cents",
-            label: "Max Position Size (cents)",
+            label: "Max Position Size ($)",
             description: "Maximum single position size allowed",
-            setting_type: "number",
+            setting_type: "dollars",
             requires_restart: false,
-            min: Some(10000),
-            max: Some(10000000),
+            min: Some(100),
+            max: Some(100000),
         },
         SettingMeta {
             key: "cooldown_secs",
@@ -319,33 +319,6 @@ fn get_settings_meta() -> Vec<SettingMeta> {
             requires_restart: false,
             min: Some(60),
             max: Some(3600),
-        },
-        SettingMeta {
-            key: "queue_sort_interval_secs",
-            label: "Queue Sort Interval (sec)",
-            description: "How often to re-sort the priority queue",
-            setting_type: "number",
-            requires_restart: false,
-            min: Some(1),
-            max: Some(60),
-        },
-        SettingMeta {
-            key: "ws_reconnect_delay_secs",
-            label: "WS Reconnect Delay (sec)",
-            description: "Delay before reconnecting dropped WebSockets",
-            setting_type: "number",
-            requires_restart: false,
-            min: Some(1),
-            max: Some(30),
-        },
-        SettingMeta {
-            key: "enabled_leagues",
-            label: "Enabled Leagues",
-            description: "Comma-separated list (empty = all). e.g., nba,nfl,epl",
-            setting_type: "text",
-            requires_restart: true,
-            min: None,
-            max: None,
         },
     ]
 }
@@ -377,7 +350,7 @@ async fn get_status(State(state): State<SharedWebState>) -> impl IntoResponse {
         format!("{}s", secs)
     };
 
-    let mode = if cfg.dry_run { "DRY RUN" } else { "LIVE" };
+    let mode = if cfg.dry_run { "PAPER" } else { "LIVE" };
 
     let status = BotStatus {
         running: true,
@@ -757,34 +730,48 @@ const DASHBOARD_HTML: &str = r##"<!DOCTYPE html>
         }
         input:focus { border-color: #58a6ff; outline: none; }
 
-        .toggle {
-            position: relative;
-            width: 50px;
-            height: 26px;
-        }
-        .toggle input { opacity: 0; width: 0; height: 0; }
-        .toggle-slider {
-            position: absolute;
+        /* Toggle Button - Fixed styling */
+        .toggle-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
             cursor: pointer;
-            top: 0; left: 0; right: 0; bottom: 0;
-            background: #30363d;
-            border-radius: 26px;
-            transition: 0.3s;
+            user-select: none;
         }
-        .toggle-slider:before {
-            position: absolute;
+        .toggle-btn input { display: none; }
+        .toggle-switch {
+            width: 48px;
+            height: 24px;
+            background: #f85149;
+            border-radius: 12px;
+            position: relative;
+            transition: background 0.3s;
+            flex-shrink: 0;
+        }
+        .toggle-switch:after {
             content: "";
-            height: 20px;
+            position: absolute;
             width: 20px;
-            left: 3px;
-            bottom: 3px;
+            height: 20px;
             background: white;
             border-radius: 50%;
-            transition: 0.3s;
+            top: 2px;
+            left: 2px;
+            transition: transform 0.3s;
         }
-        .toggle input:checked + .toggle-slider { background: #238636; }
-        .toggle input:checked + .toggle-slider:before { transform: translateX(24px); }
-        .toggle.danger input:checked + .toggle-slider { background: #f85149; }
+        .toggle-btn input:checked + .toggle-switch {
+            background: #238636;
+        }
+        .toggle-btn input:checked + .toggle-switch:after {
+            transform: translateX(24px);
+        }
+        .toggle-label {
+            font-size: 12px;
+            color: #8b949e;
+            min-width: 40px;
+        }
+        .toggle-btn input:checked ~ .toggle-label { color: #3fb950; }
+        .toggle-btn input:not(:checked) ~ .toggle-label { color: #f85149; }
 
         /* Buttons */
         .btn {
@@ -873,7 +860,7 @@ const DASHBOARD_HTML: &str = r##"<!DOCTYPE html>
         <!-- Status Bar -->
         <div class="status-bar" id="status-bar">
             <div class="status-card" id="mode-card">
-                <div class="status-value"><span class="mode-badge dry" id="mode-badge">DRY RUN</span></div>
+                <div class="status-value"><span class="mode-badge dry" id="mode-badge">PAPER</span></div>
                 <div class="status-label">Trading Mode</div>
             </div>
             <div class="status-card">
@@ -934,6 +921,27 @@ const DASHBOARD_HTML: &str = r##"<!DOCTYPE html>
                     <div class="metric-card">
                         <div class="metric-value" id="total-volume">$0</div>
                         <div class="metric-label">Total Volume</div>
+                    </div>
+                </div>
+            </div>
+            <div class="section">
+                <div class="section-title">30-Day Projection (Based on Current Rate)</div>
+                <div class="analytics-grid">
+                    <div class="metric-card">
+                        <div class="metric-value positive" id="proj-profit">$0.00</div>
+                        <div class="metric-label">Projected Profit</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-value" id="proj-trades">0</div>
+                        <div class="metric-label">Projected Trades</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-value" id="proj-volume">$0</div>
+                        <div class="metric-label">Projected Volume</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-value positive" id="proj-roi">0%</div>
+                        <div class="metric-label">Projected 30d ROI</div>
                     </div>
                 </div>
             </div>
@@ -1003,16 +1011,6 @@ const DASHBOARD_HTML: &str = r##"<!DOCTYPE html>
                 <div id="circuit-settings"></div>
             </div>
 
-            <div class="section">
-                <div class="section-title">Performance Tuning</div>
-                <div id="timing-settings"></div>
-            </div>
-
-            <div class="section">
-                <div class="section-title">Market Selection</div>
-                <div id="market-settings"></div>
-            </div>
-
             <div class="actions">
                 <button class="btn" onclick="saveConfig()">Save Changes</button>
                 <button class="btn btn-secondary" onclick="loadConfig()">Reset</button>
@@ -1058,9 +1056,6 @@ const DASHBOARD_HTML: &str = r##"<!DOCTYPE html>
             'max_daily_loss_cents': 'circuit-settings',
             'max_position_size_cents': 'circuit-settings',
             'cooldown_secs': 'circuit-settings',
-            'queue_sort_interval_secs': 'timing-settings',
-            'ws_reconnect_delay_secs': 'timing-settings',
-            'enabled_leagues': 'market-settings',
         };
 
         function showTab(name) {
@@ -1114,7 +1109,7 @@ const DASHBOARD_HTML: &str = r##"<!DOCTYPE html>
             const modeBadge = document.getElementById('mode-badge');
             const modeCard = document.getElementById('mode-card');
             if (status.dry_run) {
-                modeBadge.textContent = 'DRY RUN';
+                modeBadge.textContent = 'PAPER';
                 modeBadge.className = 'mode-badge dry';
                 modeCard.className = 'status-card dry';
             } else {
@@ -1139,9 +1134,28 @@ const DASHBOARD_HTML: &str = r##"<!DOCTYPE html>
             document.getElementById('profit-hour').textContent = formatCents(a.profit_per_hour_cents);
             document.getElementById('trades-hour').textContent = a.trades_per_hour.toFixed(1);
             document.getElementById('avg-profit').textContent = formatCents(a.avg_profit_per_trade_cents);
-            document.getElementById('avg-latency').textContent = a.avg_latency_ms.toFixed(1) + 'ms';
+
+            // Fix latency display - convert if stored as nanoseconds (> 60000ms is unreasonable)
+            let latencyMs = a.avg_latency_ms;
+            if (latencyMs > 60000) {
+                latencyMs = latencyMs / 1000000; // Convert ns to ms
+            }
+            document.getElementById('avg-latency').textContent = latencyMs.toFixed(1) + 'ms';
+
             document.getElementById('best-trade').textContent = formatCents(a.best_trade_profit_cents);
             document.getElementById('total-volume').textContent = formatCents(a.total_volume_cents);
+
+            // 30-day projections based on hourly rates
+            const hoursIn30Days = 30 * 24;
+            const projProfit = a.profit_per_hour_cents * hoursIn30Days;
+            const projTrades = Math.round(a.trades_per_hour * hoursIn30Days);
+            const projVolume = (a.total_volume_cents / Math.max(a.total_trades, 1)) * projTrades;
+            const projRoi = a.bankroll_cents > 0 ? (projProfit / a.bankroll_cents) * 100 : 0;
+
+            document.getElementById('proj-profit').textContent = formatCents(projProfit);
+            document.getElementById('proj-trades').textContent = projTrades.toLocaleString();
+            document.getElementById('proj-volume').textContent = formatCents(projVolume);
+            document.getElementById('proj-roi').textContent = projRoi.toFixed(1) + '%';
         }
 
         function updateTrades(trades) {
@@ -1223,12 +1237,26 @@ const DASHBOARD_HTML: &str = r##"<!DOCTYPE html>
                 const value = config[setting.key];
 
                 if (setting.setting_type === 'toggle') {
-                    const isDanger = setting.key === 'dry_run';
+                    const labelOn = setting.key === 'dry_run' ? 'PAPER' : 'ON';
+                    const labelOff = setting.key === 'dry_run' ? 'LIVE' : 'OFF';
                     control = `
-                        <label class="toggle ${isDanger ? 'danger' : ''}">
+                        <label class="toggle-btn">
                             <input type="checkbox" id="${setting.key}" ${value ? 'checked' : ''}>
-                            <span class="toggle-slider"></span>
+                            <span class="toggle-switch"></span>
+                            <span class="toggle-label">${value ? labelOn : labelOff}</span>
                         </label>
+                    `;
+                } else if (setting.setting_type === 'dollars') {
+                    // Display in dollars but store in cents
+                    const dollarValue = (value / 100).toFixed(0);
+                    control = `
+                        <div style="display:flex;align-items:center;gap:4px;">
+                            <span style="color:#8b949e;">$</span>
+                            <input type="number" id="${setting.key}" value="${dollarValue}"
+                                data-type="dollars"
+                                ${setting.min !== null ? 'min="' + setting.min + '"' : ''}
+                                ${setting.max !== null ? 'max="' + setting.max + '"' : ''}>
+                        </div>
                     `;
                 } else if (setting.setting_type === 'number') {
                     control = `
@@ -1251,17 +1279,33 @@ const DASHBOARD_HTML: &str = r##"<!DOCTYPE html>
                     <div class="setting-control">${control}</div>
                 `;
                 section.appendChild(div);
+
+                // Add change listener for toggle labels
+                if (setting.setting_type === 'toggle') {
+                    const checkbox = div.querySelector('input[type="checkbox"]');
+                    const label = div.querySelector('.toggle-label');
+                    const labelOn = setting.key === 'dry_run' ? 'PAPER' : 'ON';
+                    const labelOff = setting.key === 'dry_run' ? 'LIVE' : 'OFF';
+                    checkbox.addEventListener('change', () => {
+                        label.textContent = checkbox.checked ? labelOn : labelOff;
+                    });
+                }
             });
         }
 
         async function saveConfig() {
-            const newConfig = {};
+            // Start with existing config to preserve hidden fields
+            const newConfig = { ...config };
+
             meta.forEach(setting => {
                 const el = document.getElementById(setting.key);
                 if (!el) return;
 
                 if (setting.setting_type === 'toggle') {
                     newConfig[setting.key] = el.checked;
+                } else if (setting.setting_type === 'dollars') {
+                    // Convert dollars to cents for storage
+                    newConfig[setting.key] = (parseInt(el.value) || 0) * 100;
                 } else if (setting.setting_type === 'number') {
                     newConfig[setting.key] = parseInt(el.value) || 0;
                 } else {
