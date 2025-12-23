@@ -132,6 +132,14 @@ pub fn get_league_configs() -> Vec<LeagueConfig> {
             kalshi_series_btts: None,
         },
         LeagueConfig {
+            league_code: "wnba",
+            poly_prefix: "wnba",
+            kalshi_series_game: "KXWNBAGAME",
+            kalshi_series_spread: Some("KXWNBASPREAD"),
+            kalshi_series_total: Some("KXWNBATOTAL"),
+            kalshi_series_btts: None,
+        },
+        LeagueConfig {
             league_code: "nfl",
             poly_prefix: "nfl",
             kalshi_series_game: "KXNFLGAME",
