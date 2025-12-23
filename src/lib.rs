@@ -6,6 +6,7 @@
 pub mod cache;
 pub mod circuit_breaker;
 pub mod config;
+pub mod crypto_discovery;
 pub mod discovery;
 pub mod execution;
 pub mod kalshi;

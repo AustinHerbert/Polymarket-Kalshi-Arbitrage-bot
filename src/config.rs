@@ -205,3 +205,277 @@ pub fn get_league_config(league: &str) -> Option<LeagueConfig> {
         .into_iter()
         .find(|c| c.league_code == league || c.poly_prefix == league)
 }
+
+// =============================================================================
+// CRYPTO MARKET CONFIGURATION
+// =============================================================================
+
+/// Crypto asset identifiers
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum CryptoAsset {
+    BTC,
+    ETH,
+    SOL,
+    XRP,
+    DOGE,
+}
+
+impl CryptoAsset {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            CryptoAsset::BTC => "btc",
+            CryptoAsset::ETH => "eth",
+            CryptoAsset::SOL => "sol",
+            CryptoAsset::XRP => "xrp",
+            CryptoAsset::DOGE => "doge",
+        }
+    }
+
+    pub fn display_name(&self) -> &'static str {
+        match self {
+            CryptoAsset::BTC => "Bitcoin",
+            CryptoAsset::ETH => "Ethereum",
+            CryptoAsset::SOL => "Solana",
+            CryptoAsset::XRP => "XRP",
+            CryptoAsset::DOGE => "Dogecoin",
+        }
+    }
+}
+
+impl std::fmt::Display for CryptoAsset {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.as_str().to_uppercase())
+    }
+}
+
+/// Crypto market timeframe
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum CryptoTimeframe {
+    /// 15-minute markets (Polymarket only)
+    FifteenMin,
+    /// Hourly markets (both platforms)
+    Hourly,
+    /// 4-hour markets
+    FourHour,
+    /// Daily markets (EOD settlement)
+    Daily,
+    /// Weekly markets
+    Weekly,
+}
+
+impl CryptoTimeframe {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            CryptoTimeframe::FifteenMin => "15m",
+            CryptoTimeframe::Hourly => "1h",
+            CryptoTimeframe::FourHour => "4h",
+            CryptoTimeframe::Daily => "1d",
+            CryptoTimeframe::Weekly => "1w",
+        }
+    }
+
+    /// Scan interval in milliseconds for this timeframe
+    pub fn scan_interval_ms(&self) -> u64 {
+        match self {
+            CryptoTimeframe::FifteenMin => 500,   // Very fast - 0.5 second
+            CryptoTimeframe::Hourly => 1000,      // Fast - 1 second
+            CryptoTimeframe::FourHour => 5000,    // Normal - 5 seconds
+            CryptoTimeframe::Daily => 10000,      // Slow - 10 seconds
+            CryptoTimeframe::Weekly => 30000,     // Very slow - 30 seconds
+        }
+    }
+}
+
+/// Platform availability for crypto markets
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CryptoPlatform {
+    /// Only available on Kalshi (same-platform arb between brackets)
+    KalshiOnly,
+    /// Only available on Polymarket (same-platform YES/NO arb)
+    PolymarketOnly,
+    /// Available on both platforms (cross-platform arb)
+    Both,
+}
+
+/// Configuration for a crypto market series
+#[derive(Debug, Clone)]
+pub struct CryptoMarketConfig {
+    /// Asset being traded
+    pub asset: CryptoAsset,
+    /// Market timeframe
+    pub timeframe: CryptoTimeframe,
+    /// Which platforms have this market
+    pub platform: CryptoPlatform,
+    /// Kalshi series ticker (if applicable)
+    pub kalshi_series: Option<&'static str>,
+    /// Polymarket slug pattern (if applicable)
+    /// Use {asset}, {date}, {timestamp} as placeholders
+    pub poly_slug_pattern: Option<&'static str>,
+    /// Whether this market has multiple price brackets (Kalshi hourly)
+    pub has_brackets: bool,
+}
+
+/// Get all supported crypto market configurations
+pub fn get_crypto_configs() -> Vec<CryptoMarketConfig> {
+    vec![
+        // === KALSHI HOURLY PRICE BRACKETS (Same-platform arb) ===
+        // BTC and ETH have hourly markets with multiple price brackets
+        CryptoMarketConfig {
+            asset: CryptoAsset::BTC,
+            timeframe: CryptoTimeframe::Hourly,
+            platform: CryptoPlatform::KalshiOnly,
+            kalshi_series: Some("KXBTCD"),  // Bitcoin daily/hourly
+            poly_slug_pattern: None,
+            has_brackets: true,
+        },
+        CryptoMarketConfig {
+            asset: CryptoAsset::ETH,
+            timeframe: CryptoTimeframe::Hourly,
+            platform: CryptoPlatform::KalshiOnly,
+            kalshi_series: Some("KXETHD"),  // Ethereum daily/hourly
+            poly_slug_pattern: None,
+            has_brackets: true,
+        },
+
+        // === POLYMARKET 15-MINUTE MARKETS (Same-platform arb) ===
+        // Up/Down markets that settle every 15 minutes
+        CryptoMarketConfig {
+            asset: CryptoAsset::BTC,
+            timeframe: CryptoTimeframe::FifteenMin,
+            platform: CryptoPlatform::PolymarketOnly,
+            kalshi_series: None,
+            poly_slug_pattern: Some("btc-updown-15m-{timestamp}"),
+            has_brackets: false,
+        },
+        CryptoMarketConfig {
+            asset: CryptoAsset::ETH,
+            timeframe: CryptoTimeframe::FifteenMin,
+            platform: CryptoPlatform::PolymarketOnly,
+            kalshi_series: None,
+            poly_slug_pattern: Some("eth-updown-15m-{timestamp}"),
+            has_brackets: false,
+        },
+        CryptoMarketConfig {
+            asset: CryptoAsset::SOL,
+            timeframe: CryptoTimeframe::FifteenMin,
+            platform: CryptoPlatform::PolymarketOnly,
+            kalshi_series: None,
+            poly_slug_pattern: Some("sol-updown-15m-{timestamp}"),
+            has_brackets: false,
+        },
+        CryptoMarketConfig {
+            asset: CryptoAsset::XRP,
+            timeframe: CryptoTimeframe::FifteenMin,
+            platform: CryptoPlatform::PolymarketOnly,
+            kalshi_series: None,
+            poly_slug_pattern: Some("xrp-updown-15m-{timestamp}"),
+            has_brackets: false,
+        },
+
+        // === POLYMARKET HOURLY MARKETS ===
+        CryptoMarketConfig {
+            asset: CryptoAsset::BTC,
+            timeframe: CryptoTimeframe::Hourly,
+            platform: CryptoPlatform::PolymarketOnly,
+            kalshi_series: None,
+            poly_slug_pattern: Some("btc-hourly-{date}"),
+            has_brackets: false,
+        },
+        CryptoMarketConfig {
+            asset: CryptoAsset::ETH,
+            timeframe: CryptoTimeframe::Hourly,
+            platform: CryptoPlatform::PolymarketOnly,
+            kalshi_series: None,
+            poly_slug_pattern: Some("eth-hourly-{date}"),
+            has_brackets: false,
+        },
+
+        // === CROSS-PLATFORM DAILY MARKETS ===
+        // These exist on both platforms with matching settlement times
+        CryptoMarketConfig {
+            asset: CryptoAsset::BTC,
+            timeframe: CryptoTimeframe::Daily,
+            platform: CryptoPlatform::Both,
+            kalshi_series: Some("KXBTCD"),
+            poly_slug_pattern: Some("bitcoin-above-{price}-{date}"),
+            has_brackets: false,
+        },
+    ]
+}
+
+/// Get crypto configs filtered by asset
+pub fn get_crypto_configs_for_asset(asset: CryptoAsset) -> Vec<CryptoMarketConfig> {
+    get_crypto_configs()
+        .into_iter()
+        .filter(|c| c.asset == asset)
+        .collect()
+}
+
+/// Get crypto configs filtered by platform
+pub fn get_crypto_configs_for_platform(platform: CryptoPlatform) -> Vec<CryptoMarketConfig> {
+    get_crypto_configs()
+        .into_iter()
+        .filter(|c| c.platform == platform)
+        .collect()
+}
+
+/// Get the fastest scan interval needed for enabled crypto markets
+pub fn get_crypto_fast_scan_interval_ms() -> u64 {
+    get_crypto_configs()
+        .iter()
+        .map(|c| c.timeframe.scan_interval_ms())
+        .min()
+        .unwrap_or(1000)
+}
+
+/// Check if crypto markets are enabled via environment variable
+pub fn crypto_enabled() -> bool {
+    static CACHED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *CACHED.get_or_init(|| {
+        std::env::var("CRYPTO_ENABLED")
+            .map(|v| v == "1" || v.to_lowercase() == "true")
+            .unwrap_or(false)  // Disabled by default for safety
+    })
+}
+
+// =============================================================================
+// STOCK INDEX MARKET CONFIGURATION (Kalshi only - same platform arb)
+// =============================================================================
+
+/// Stock index identifiers
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum StockIndex {
+    SP500,
+    Nasdaq100,
+}
+
+impl StockIndex {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            StockIndex::SP500 => "spx",
+            StockIndex::Nasdaq100 => "ndx",
+        }
+    }
+
+    pub fn display_name(&self) -> &'static str {
+        match self {
+            StockIndex::SP500 => "S&P 500",
+            StockIndex::Nasdaq100 => "NASDAQ-100",
+        }
+    }
+
+    pub fn kalshi_series(&self) -> &'static str {
+        match self {
+            StockIndex::SP500 => "INXD",
+            StockIndex::Nasdaq100 => "NASDAQ100D",
+        }
+    }
+}
+
+/// Get stock index market configurations
+pub fn get_index_configs() -> Vec<(StockIndex, &'static str)> {
+    vec![
+        (StockIndex::SP500, "INXD"),
+        (StockIndex::Nasdaq100, "NASDAQ100D"),
+    ]
+}

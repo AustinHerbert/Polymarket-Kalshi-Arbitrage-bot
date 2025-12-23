@@ -329,6 +329,8 @@ impl DiscoveryClient {
             MarketType::Spread => config.kalshi_series_spread,
             MarketType::Total => config.kalshi_series_total,
             MarketType::Btts => config.kalshi_series_btts,
+            // Crypto market types are handled by crypto_discovery module
+            MarketType::PriceThreshold | MarketType::UpDown | MarketType::PriceBracket => None,
         }
     }
     
@@ -539,6 +541,10 @@ impl DiscoveryClient {
             }
             MarketType::Btts => {
                 format!("{}-btts", base)
+            }
+            // Crypto market types are handled by crypto_discovery module
+            MarketType::PriceThreshold | MarketType::UpDown | MarketType::PriceBracket => {
+                base  // Fallback - crypto slugs are generated differently
             }
         }
     }

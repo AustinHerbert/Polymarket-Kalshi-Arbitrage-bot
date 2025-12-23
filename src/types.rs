@@ -10,7 +10,32 @@ use rustc_hash::FxHashMap;
 
 // === Market Types ===
 
-/// Market category for a matched trading pair
+/// Market category (sports vs crypto vs other)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
+pub enum MarketCategory {
+    /// Sports markets (existing functionality)
+    #[default]
+    Sports,
+    /// Cryptocurrency price markets
+    Crypto,
+    /// Stock index markets (S&P 500, NASDAQ)
+    Index,
+    /// Economic indicator markets (CPI, Fed rate)
+    Economics,
+}
+
+impl std::fmt::Display for MarketCategory {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            MarketCategory::Sports => write!(f, "sports"),
+            MarketCategory::Crypto => write!(f, "crypto"),
+            MarketCategory::Index => write!(f, "index"),
+            MarketCategory::Economics => write!(f, "economics"),
+        }
+    }
+}
+
+/// Market type for a matched trading pair
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum MarketType {
     /// Moneyline/outright winner market
@@ -21,6 +46,12 @@ pub enum MarketType {
     Total,
     /// Both teams to score market
     Btts,
+    /// Crypto price above/below threshold
+    PriceThreshold,
+    /// Crypto up/down in timeframe (15-min, hourly)
+    UpDown,
+    /// Price range bracket (Kalshi hourly crypto)
+    PriceBracket,
 }
 
 impl std::fmt::Display for MarketType {
@@ -30,6 +61,9 @@ impl std::fmt::Display for MarketType {
             MarketType::Spread => write!(f, "spread"),
             MarketType::Total => write!(f, "total"),
             MarketType::Btts => write!(f, "btts"),
+            MarketType::PriceThreshold => write!(f, "price_threshold"),
+            MarketType::UpDown => write!(f, "updown"),
+            MarketType::PriceBracket => write!(f, "price_bracket"),
         }
     }
 }
