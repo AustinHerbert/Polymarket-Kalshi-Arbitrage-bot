@@ -434,10 +434,15 @@ impl DiscoveryClient {
                         Ok(Some((yes_token, no_token))) => {
                             let team_suffix = extract_team_suffix(&task.market.ticker);
 
-                            // Parse expiration time from Kalshi market
+                            // Parse game start time from close_time (when betting closes = game starts)
+                            // This is used for the 24-hour filter to avoid tying up capital
+                            let game_start_time_secs = task.market.close_time
+                                .as_ref()
+                                .and_then(|t| parse_iso_timestamp(t));
+
+                            // Parse expiration/settlement time (when market resolves after game ends)
                             let expiration_time_secs = task.market.expiration_time
                                 .as_ref()
-                                .or(task.market.close_time.as_ref())
                                 .and_then(|t| parse_iso_timestamp(t));
 
                             // Check if market is currently live (status-based or time-based)
@@ -458,6 +463,7 @@ impl DiscoveryClient {
                                 poly_no_token: no_token.into(),
                                 line_value: task.market.floor_strike,
                                 team_suffix: team_suffix.map(|s| s.into()),
+                                game_start_time_secs,
                                 expiration_time_secs,
                                 is_live,
                             })

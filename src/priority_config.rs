@@ -38,6 +38,11 @@ pub struct PriorityConfig {
     /// Profit percentage weight for priority scoring (default: 2.0)
     /// Higher values prioritize higher profit opportunities
     pub profit_weight: f64,
+
+    /// Maximum hours until game start to consider for trading (default: 24)
+    /// Games starting more than this many hours away will be skipped
+    /// Set to 0 to disable (trade all games regardless of start time)
+    pub max_hours_until_game: u64,
 }
 
 impl Default for PriorityConfig {
@@ -51,6 +56,7 @@ impl Default for PriorityConfig {
             live_game_priority_boost: 10.0,
             expiration_weight: 1.0,
             profit_weight: 2.0,
+            max_hours_until_game: 24, // Only trade games within 24 hours
         }
     }
 }
@@ -67,6 +73,7 @@ impl PriorityConfig {
             live_game_priority_boost: parse_env_f64("LIVE_PRIORITY_BOOST", 10.0),
             expiration_weight: parse_env_f64("EXPIRATION_WEIGHT", 1.0),
             profit_weight: parse_env_f64("PROFIT_WEIGHT", 2.0),
+            max_hours_until_game: parse_env_u64("MAX_HOURS_UNTIL_GAME", 24),
         }
     }
 
@@ -113,6 +120,35 @@ impl PriorityConfig {
     #[inline]
     pub fn meets_min_profit(&self, profit_percent: f64) -> bool {
         profit_percent >= self.min_arb_percent
+    }
+
+    /// Check if a game starting at the given Unix timestamp is within the allowed time window.
+    /// Returns true if the game should be traded (within max_hours_until_game).
+    /// If max_hours_until_game is 0, always returns true (disabled).
+    /// If game_start_secs is None, returns true (trade it since we don't know when it starts).
+    /// Live games (is_live=true) always return true regardless of time window.
+    #[inline]
+    pub fn is_within_time_window(&self, game_start_secs: Option<u64>, is_live: bool) -> bool {
+        // Live games always qualify
+        if is_live {
+            return true;
+        }
+        // Feature disabled if max_hours is 0
+        if self.max_hours_until_game == 0 {
+            return true;
+        }
+        // If no start time, assume it's okay
+        let start_secs = match game_start_secs {
+            Some(s) => s,
+            None => return true,
+        };
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        let max_secs = self.max_hours_until_game * 3600;
+        // Game must start within max_hours_until_game
+        start_secs <= now + max_secs
     }
 }
 

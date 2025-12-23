@@ -141,6 +141,13 @@ impl PrioritizedOpportunity {
         let (clamped, was_clamped) = config.clamp_liquidity(min_size_cents);
         ((clamped / 100) as u16, was_clamped)
     }
+
+    /// Check if this game starts within the allowed time window (24 hours by default)
+    /// Live games always pass. Games too far in the future are filtered out to avoid
+    /// tying up capital.
+    pub fn is_within_time_window(&self, config: &PriorityConfig) -> bool {
+        config.is_within_time_window(self.pair.game_start_time_secs, self.is_live)
+    }
 }
 
 // Implement ordering for BinaryHeap (max-heap by priority_score)
@@ -198,6 +205,14 @@ impl PriorityQueue {
 
         if !opp.has_sufficient_liquidity(&self.config) {
             debug!("Rejecting opportunity: insufficient liquidity");
+            return;
+        }
+
+        // Filter out games starting too far in the future (default: >24 hours)
+        // This prevents capital from being tied up in bets for distant games
+        if !opp.is_within_time_window(&self.config) {
+            debug!("Rejecting opportunity: game starts more than {}h away",
+                   self.config.max_hours_until_game);
             return;
         }
 
@@ -478,6 +493,7 @@ mod tests {
     use crate::types::{MarketType, ArbType};
 
     fn make_test_pair(is_live: bool, expiry_secs: Option<u64>) -> Arc<MarketPair> {
+        // For tests, game_start_time is same as expiry (simplified)
         Arc::new(MarketPair {
             pair_id: "test".into(),
             league: "epl".into(),
@@ -490,6 +506,7 @@ mod tests {
             poly_no_token: "no".into(),
             line_value: None,
             team_suffix: None,
+            game_start_time_secs: expiry_secs,
             expiration_time_secs: expiry_secs,
             is_live,
         })

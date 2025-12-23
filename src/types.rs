@@ -59,7 +59,11 @@ pub struct MarketPair {
     pub line_value: Option<f64>,
     /// Team suffix for team-specific markets
     pub team_suffix: Option<Arc<str>>,
-    /// Market expiration time as Unix timestamp in seconds (for priority sorting)
+    /// Game start time (from close_time) as Unix timestamp - used for 24hr filtering
+    /// This is when betting closes and the game starts
+    #[serde(default)]
+    pub game_start_time_secs: Option<u64>,
+    /// Market expiration/settlement time as Unix timestamp
     #[serde(default)]
     pub expiration_time_secs: Option<u64>,
     /// Whether this market is for a currently live/in-progress game
@@ -829,6 +833,7 @@ mod tests {
             poly_no_token: format!("no_token_{}", id).into(),
             line_value: None,
             team_suffix: None,
+            game_start_time_secs: None,
             expiration_time_secs: None,
             is_live: false,
         }
@@ -1114,6 +1119,7 @@ mod tests {
             poly_no_token: "no_token_cfc".into(),
             line_value: None,
             team_suffix: Some("CFC".into()),
+            game_start_time_secs: None,
             expiration_time_secs: None,
             is_live: false,
         };

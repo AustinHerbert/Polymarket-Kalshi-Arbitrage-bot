@@ -476,6 +476,7 @@ mod infra_integration_tests {
             poly_no_token: "arb_no_token".into(),
             line_value: None,
             team_suffix: Some("CFC".into()),
+            game_start_time_secs: None,
             expiration_time_secs: None,
             is_live: false,
         };
@@ -692,6 +693,7 @@ mod infra_integration_tests {
                 poly_no_token: format!("no_{}", i).into(),
                 line_value: None,
                 team_suffix: None,
+                game_start_time_secs: None,
                 expiration_time_secs: None,
                 is_live: false,
             };
@@ -1327,6 +1329,7 @@ mod process_mock_tests {
             poly_no_token: "pf_no_token".into(),
             line_value: None,
             team_suffix: None,
+            game_start_time_secs: None,
             expiration_time_secs: None,
             is_live: false,
         }
