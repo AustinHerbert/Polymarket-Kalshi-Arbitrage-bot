@@ -20,6 +20,7 @@ use crate::types::{
 use crate::circuit_breaker::CircuitBreaker;
 use crate::position_tracker::{FillRecord, PositionChannel};
 use crate::priority_config::PriorityConfig;
+use crate::trade_log::{get_trade_logger, TradeStatus};
 
 // =============================================================================
 // EXECUTION ENGINE
@@ -246,6 +247,34 @@ impl ExecutionEngine {
 
         if self.dry_run {
             info!("[EXEC] 🏃 DRY RUN - would execute {} contracts", max_contracts);
+
+            // Log the dry run trade
+            if let Some(logger) = get_trade_logger() {
+                let arb_type_str = match req.arb_type {
+                    ArbType::PolyYesKalshiNo => "PolyYes+KalshiNo",
+                    ArbType::KalshiYesPolyNo => "KalshiYes+PolyNo",
+                    ArbType::PolyOnly => "PolyOnly",
+                    ArbType::KalshiOnly => "KalshiOnly",
+                };
+                let volume_cents = ((req.yes_price + req.no_price) as u64) * max_contracts as u64;
+                let fees_cents = req.estimated_fee_cents() as u64 * max_contracts as u64;
+
+                logger.log_trade(
+                    market_id,
+                    &pair.description,
+                    arb_type_str,
+                    req.yes_price,
+                    req.no_price,
+                    max_contracts,
+                    profit_cents as i64 * max_contracts as i64,
+                    volume_cents,
+                    fees_cents,
+                    latency_to_exec,
+                    TradeStatus::DryRun,
+                    None,
+                );
+            }
+
             self.release_in_flight_delayed(market_id);
             return Ok(ExecutionResult {
                 market_id,

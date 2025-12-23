@@ -12,790 +12,537 @@
         }
 
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
             background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
-            color: #eee;
+            color: #e0e0e0;
             min-height: 100vh;
             padding: 20px;
         }
 
-        .header {
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        header {
             text-align: center;
             margin-bottom: 30px;
         }
 
-        .header h1 {
+        h1 {
             font-size: 2.5rem;
-            background: linear-gradient(90deg, #00d4ff, #7b2cbf);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
+            color: #4ade80;
             margin-bottom: 10px;
         }
 
-        .header p {
-            color: #888;
+        .status-badge {
+            display: inline-block;
+            padding: 8px 20px;
+            border-radius: 20px;
+            font-weight: bold;
+            text-transform: uppercase;
+            font-size: 0.9rem;
         }
 
-        .controls {
-            background: rgba(255,255,255,0.05);
-            border-radius: 12px;
-            padding: 20px;
-            margin-bottom: 20px;
+        .status-dry-run {
+            background: #fbbf24;
+            color: #1a1a2e;
         }
 
-        .controls h3 {
-            margin-bottom: 15px;
-            color: #00d4ff;
-        }
-
-        .param-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 15px;
-        }
-
-        .param-group {
-            background: rgba(0,0,0,0.2);
-            padding: 15px;
-            border-radius: 8px;
-        }
-
-        .param-group label {
-            display: block;
-            margin-bottom: 8px;
-            font-size: 0.85rem;
-            color: #aaa;
-        }
-
-        .param-group input {
-            width: 100%;
-            padding: 10px;
-            border: 1px solid #333;
-            border-radius: 6px;
-            background: #1a1a2e;
-            color: #fff;
-            font-size: 1rem;
-        }
-
-        .param-group input:focus {
-            outline: none;
-            border-color: #00d4ff;
-        }
-
-        .btn {
-            padding: 12px 24px;
-            border: none;
-            border-radius: 8px;
-            font-size: 1rem;
-            cursor: pointer;
-            transition: all 0.3s;
-            margin: 5px;
-        }
-
-        .btn-primary {
-            background: linear-gradient(90deg, #00d4ff, #7b2cbf);
+        .status-live {
+            background: #ef4444;
             color: white;
         }
 
-        .btn-primary:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 5px 20px rgba(0, 212, 255, 0.3);
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
         }
 
-        .btn-secondary {
-            background: rgba(255,255,255,0.1);
+        .stat-card {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 16px;
+            padding: 24px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .stat-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 30px rgba(0, 0, 0, 0.3);
+        }
+
+        .stat-label {
+            font-size: 0.85rem;
+            color: #888;
+            margin-bottom: 8px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .stat-value {
+            font-size: 2rem;
+            font-weight: bold;
             color: #fff;
         }
 
-        .dashboard {
+        .stat-value.positive {
+            color: #4ade80;
+        }
+
+        .stat-value.negative {
+            color: #ef4444;
+        }
+
+        .stat-subtext {
+            font-size: 0.8rem;
+            color: #666;
+            margin-top: 4px;
+        }
+
+        .section-title {
+            font-size: 1.5rem;
+            margin-bottom: 20px;
+            color: #4ade80;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .projection-section {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 16px;
+            padding: 24px;
+            margin-bottom: 30px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .projection-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
             gap: 20px;
             margin-bottom: 20px;
         }
 
-        .card {
-            background: rgba(255,255,255,0.05);
+        .chart-container {
+            height: 300px;
+            background: rgba(0, 0, 0, 0.2);
             border-radius: 12px;
             padding: 20px;
-            border: 1px solid rgba(255,255,255,0.1);
+            position: relative;
         }
 
-        .card h3 {
-            color: #00d4ff;
-            margin-bottom: 15px;
-            font-size: 1rem;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-        }
-
-        .metric {
+        .chart-placeholder {
             display: flex;
-            justify-content: space-between;
-            padding: 10px 0;
-            border-bottom: 1px solid rgba(255,255,255,0.05);
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            color: #666;
         }
 
-        .metric:last-child {
-            border-bottom: none;
+        .trades-section {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 16px;
+            padding: 24px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
         }
 
-        .metric-label {
-            color: #888;
-        }
-
-        .metric-value {
-            font-weight: 600;
-            font-family: 'SF Mono', monospace;
-        }
-
-        .metric-value.positive {
-            color: #00ff88;
-        }
-
-        .metric-value.negative {
-            color: #ff4466;
-        }
-
-        .comparison-table {
+        .trades-table {
             width: 100%;
             border-collapse: collapse;
             margin-top: 15px;
         }
 
-        .comparison-table th,
-        .comparison-table td {
-            padding: 12px;
-            text-align: right;
-            border-bottom: 1px solid rgba(255,255,255,0.1);
-        }
-
-        .comparison-table th {
-            color: #00d4ff;
-            font-weight: 500;
-            text-transform: uppercase;
-            font-size: 0.8rem;
-        }
-
-        .comparison-table th:first-child,
-        .comparison-table td:first-child {
+        .trades-table th {
             text-align: left;
+            padding: 12px;
+            border-bottom: 2px solid rgba(255, 255, 255, 0.1);
+            color: #888;
+            font-size: 0.85rem;
+            text-transform: uppercase;
         }
 
-        .comparison-table tr:hover {
-            background: rgba(255,255,255,0.02);
+        .trades-table td {
+            padding: 12px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
         }
 
-        .diff-positive {
-            color: #00ff88;
+        .trades-table tr:hover {
+            background: rgba(255, 255, 255, 0.02);
         }
 
-        .diff-negative {
-            color: #ff4466;
+        .trade-profit {
+            font-weight: bold;
         }
 
-        .chart-container {
-            height: 200px;
-            margin-top: 15px;
-            position: relative;
+        .trade-profit.positive {
+            color: #4ade80;
         }
 
+        .trade-profit.negative {
+            color: #ef4444;
+        }
+
+        .arb-type {
+            font-size: 0.75rem;
+            padding: 4px 8px;
+            border-radius: 4px;
+            background: rgba(74, 222, 128, 0.2);
+            color: #4ade80;
+        }
+
+        .no-trades {
+            text-align: center;
+            padding: 40px;
+            color: #666;
+        }
+
+        .refresh-info {
+            text-align: center;
+            margin-top: 20px;
+            color: #666;
+            font-size: 0.85rem;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #888;
+        }
+
+        .error {
+            background: rgba(239, 68, 68, 0.2);
+            border: 1px solid #ef4444;
+            border-radius: 8px;
+            padding: 20px;
+            text-align: center;
+            color: #ef4444;
+        }
+
+        /* Simple bar chart */
         .bar-chart {
             display: flex;
             align-items: flex-end;
+            justify-content: space-around;
             height: 100%;
-            gap: 20px;
-            justify-content: center;
+            padding: 20px 0;
         }
 
         .bar-group {
             display: flex;
-            gap: 5px;
-            align-items: flex-end;
+            flex-direction: column;
+            align-items: center;
+            flex: 1;
+            max-width: 40px;
         }
 
         .bar {
-            width: 40px;
+            width: 30px;
+            background: linear-gradient(180deg, #4ade80 0%, #22c55e 100%);
             border-radius: 4px 4px 0 0;
-            transition: height 0.5s ease;
-            position: relative;
-        }
-
-        .bar.standard {
-            background: linear-gradient(180deg, #00d4ff, #0066cc);
-        }
-
-        .bar.priority {
-            background: linear-gradient(180deg, #7b2cbf, #4a0080);
+            min-height: 4px;
+            transition: height 0.3s;
         }
 
         .bar-label {
-            position: absolute;
-            bottom: -25px;
-            left: 50%;
-            transform: translateX(-50%);
-            font-size: 0.75rem;
-            color: #888;
+            font-size: 0.7rem;
+            color: #666;
+            margin-top: 8px;
+            transform: rotate(-45deg);
             white-space: nowrap;
         }
 
-        .legend {
-            display: flex;
-            justify-content: center;
-            gap: 30px;
-            margin-top: 40px;
-        }
+        @media (max-width: 768px) {
+            h1 {
+                font-size: 1.8rem;
+            }
 
-        .legend-item {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
+            .stat-value {
+                font-size: 1.5rem;
+            }
 
-        .legend-color {
-            width: 16px;
-            height: 16px;
-            border-radius: 4px;
-        }
+            .trades-table {
+                font-size: 0.85rem;
+            }
 
-        .legend-color.standard {
-            background: #00d4ff;
-        }
-
-        .legend-color.priority {
-            background: #7b2cbf;
-        }
-
-        .status {
-            text-align: center;
-            padding: 20px;
-            background: rgba(0,0,0,0.2);
-            border-radius: 8px;
-            margin-bottom: 20px;
-        }
-
-        .status.loading {
-            color: #ffaa00;
-        }
-
-        .status.error {
-            color: #ff4466;
-        }
-
-        .status.success {
-            color: #00ff88;
-        }
-
-        .file-input-wrapper {
-            display: flex;
-            gap: 10px;
-            margin-bottom: 20px;
-            flex-wrap: wrap;
-        }
-
-        .file-input-group {
-            flex: 1;
-            min-width: 200px;
-        }
-
-        .file-input-group label {
-            display: block;
-            margin-bottom: 5px;
-            color: #888;
-        }
-
-        .history-list {
-            max-height: 300px;
-            overflow-y: auto;
-        }
-
-        .history-item {
-            padding: 10px;
-            background: rgba(0,0,0,0.2);
-            border-radius: 6px;
-            margin-bottom: 8px;
-            cursor: pointer;
-            transition: background 0.2s;
-        }
-
-        .history-item:hover {
-            background: rgba(0,0,0,0.4);
-        }
-
-        .history-item.selected {
-            border: 1px solid #00d4ff;
-        }
-
-        .history-meta {
-            font-size: 0.8rem;
-            color: #666;
-            margin-top: 5px;
+            .trades-table th,
+            .trades-table td {
+                padding: 8px;
+            }
         }
     </style>
 </head>
 <body>
-    <div class="header">
-        <h1>Arbitrage Bot Dashboard</h1>
-        <p>Compare Standard vs Priority Mode Performance</p>
-    </div>
+    <div class="container">
+        <header>
+            <h1>Arbitrage Bot Dashboard</h1>
+            <span id="status-badge" class="status-badge status-dry-run">DRY RUN</span>
+        </header>
 
-    <div class="controls">
-        <h3>Parameter Configuration</h3>
-        <div class="param-grid">
-            <div class="param-group">
-                <label>Min Liquidity ($)</label>
-                <input type="number" id="minLiquidity" value="250" step="50">
-            </div>
-            <div class="param-group">
-                <label>Max Liquidity ($)</label>
-                <input type="number" id="maxLiquidity" value="2500" step="100">
-            </div>
-            <div class="param-group">
-                <label>Min Arb Percent (%)</label>
-                <input type="number" id="minArbPercent" value="1.0" step="0.1">
-            </div>
-            <div class="param-group">
-                <label>Queue Sort Interval (s)</label>
-                <input type="number" id="sortInterval" value="5" step="1">
-            </div>
-            <div class="param-group">
-                <label>Live Priority Boost</label>
-                <input type="number" id="liveBoost" value="10.0" step="1">
-            </div>
-            <div class="param-group">
-                <label>Profit Weight</label>
-                <input type="number" id="profitWeight" value="2.0" step="0.5">
-            </div>
-        </div>
-        <div style="margin-top: 20px; text-align: center;">
-            <button class="btn btn-primary" onclick="generateEnvCommand()">Generate ENV Command</button>
-            <button class="btn btn-secondary" onclick="saveConfig()">Save Config</button>
-            <button class="btn btn-secondary" onclick="loadConfig()">Load Config</button>
-        </div>
-        <div id="envCommand" style="margin-top: 15px; display: none;">
-            <pre style="background: #000; padding: 15px; border-radius: 8px; overflow-x: auto; font-size: 0.85rem;"></pre>
-        </div>
-    </div>
+        <div id="loading" class="loading">Loading dashboard data...</div>
+        <div id="error" class="error" style="display: none;"></div>
 
-    <div class="controls">
-        <h3>Load Metrics Files</h3>
-        <div class="file-input-wrapper">
-            <div class="file-input-group">
-                <label>Standard Mode Metrics (JSON)</label>
-                <input type="file" id="standardFile" accept=".json" onchange="loadFile('standard')">
-            </div>
-            <div class="file-input-group">
-                <label>Priority Mode Metrics (JSON)</label>
-                <input type="file" id="priorityFile" accept=".json" onchange="loadFile('priority')">
-            </div>
-        </div>
-        <div style="text-align: center;">
-            <button class="btn btn-primary" onclick="compareMetrics()">Compare Metrics</button>
-            <button class="btn btn-secondary" onclick="loadSampleData()">Load Sample Data</button>
-        </div>
-    </div>
-
-    <div id="status" class="status" style="display: none;"></div>
-
-    <div id="dashboard" style="display: none;">
-        <div class="dashboard">
-            <div class="card">
-                <h3>Trade Performance</h3>
-                <div class="metric">
-                    <span class="metric-label">Trades Executed</span>
-                    <span class="metric-value" id="tradesExecuted">-</span>
+        <div id="dashboard" style="display: none;">
+            <!-- Stats Grid -->
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-label">Total Profit</div>
+                    <div id="total-profit" class="stat-value positive">$0.00</div>
+                    <div class="stat-subtext">Net after fees</div>
                 </div>
-                <div class="metric">
-                    <span class="metric-label">Trade Rate</span>
-                    <span class="metric-value" id="tradeRate">-</span>
+                <div class="stat-card">
+                    <div class="stat-label">Trades Executed</div>
+                    <div id="total-trades" class="stat-value">0</div>
+                    <div id="trades-subtext" class="stat-subtext">0 rejected</div>
                 </div>
-                <div class="metric">
-                    <span class="metric-label">Conversion Rate</span>
-                    <span class="metric-value" id="conversionRate">-</span>
+                <div class="stat-card">
+                    <div class="stat-label">Profit per Hour</div>
+                    <div id="profit-per-hour" class="stat-value positive">$0.00/hr</div>
+                    <div id="hours-running" class="stat-subtext">0h running</div>
                 </div>
-                <div class="metric">
-                    <span class="metric-label">Live Game Trades</span>
-                    <span class="metric-value" id="liveGameTrades">-</span>
+                <div class="stat-card">
+                    <div class="stat-label">Avg Profit per Trade</div>
+                    <div id="avg-profit" class="stat-value">$0.00</div>
+                    <div class="stat-subtext">Per successful trade</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Best Trade</div>
+                    <div id="best-trade" class="stat-value positive">$0.00</div>
+                    <div class="stat-subtext">Single trade max</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Total Volume</div>
+                    <div id="total-volume" class="stat-value">$0.00</div>
+                    <div class="stat-subtext">All trades combined</div>
                 </div>
             </div>
 
-            <div class="card">
-                <h3>Profit & Volume</h3>
-                <div class="metric">
-                    <span class="metric-label">Total Profit</span>
-                    <span class="metric-value" id="totalProfit">-</span>
+            <!-- 30-Day Projection -->
+            <div class="projection-section">
+                <h2 class="section-title">30-Day Projection (Compounding)</h2>
+                <div class="projection-grid">
+                    <div class="stat-card">
+                        <div class="stat-label">Current Bankroll</div>
+                        <div id="bankroll" class="stat-value">$100.00</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">Daily Return Rate</div>
+                        <div id="daily-rate" class="stat-value">0.00%</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">Projected 30-Day Profit</div>
+                        <div id="projected-profit" class="stat-value positive">$0.00</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">Projected 30-Day Bankroll</div>
+                        <div id="projected-bankroll" class="stat-value positive">$0.00</div>
+                    </div>
                 </div>
-                <div class="metric">
-                    <span class="metric-label">Profit/Hour</span>
-                    <span class="metric-value" id="profitPerHour">-</span>
-                </div>
-                <div class="metric">
-                    <span class="metric-label">Total Volume</span>
-                    <span class="metric-value" id="totalVolume">-</span>
-                </div>
-                <div class="metric">
-                    <span class="metric-label">Rate of Return</span>
-                    <span class="metric-value" id="rateOfReturn">-</span>
-                </div>
-            </div>
-
-            <div class="card">
-                <h3>Rejections</h3>
-                <div class="metric">
-                    <span class="metric-label">Total Rejected</span>
-                    <span class="metric-value" id="totalRejected">-</span>
-                </div>
-                <div class="metric">
-                    <span class="metric-label">Low Profit</span>
-                    <span class="metric-value" id="rejectedLowProfit">-</span>
-                </div>
-                <div class="metric">
-                    <span class="metric-label">Low Liquidity</span>
-                    <span class="metric-value" id="rejectedLowLiquidity">-</span>
-                </div>
-                <div class="metric">
-                    <span class="metric-label">Clamped</span>
-                    <span class="metric-value" id="tradesClamped">-</span>
+                <div class="chart-container">
+                    <div id="projection-chart" class="bar-chart">
+                        <div class="chart-placeholder">
+                            <p>Projection chart will appear after trades are executed</p>
+                        </div>
+                    </div>
                 </div>
             </div>
 
-            <div class="card">
-                <h3>Latency</h3>
-                <div class="metric">
-                    <span class="metric-label">Average</span>
-                    <span class="metric-value" id="avgLatency">-</span>
-                </div>
-                <div class="metric">
-                    <span class="metric-label">Minimum</span>
-                    <span class="metric-value" id="minLatency">-</span>
-                </div>
-                <div class="metric">
-                    <span class="metric-label">Maximum</span>
-                    <span class="metric-value" id="maxLatency">-</span>
-                </div>
+            <!-- Recent Trades -->
+            <div class="trades-section">
+                <h2 class="section-title">Recent Trades</h2>
+                <table class="trades-table">
+                    <thead>
+                        <tr>
+                            <th>Time</th>
+                            <th>Market</th>
+                            <th>Type</th>
+                            <th>Contracts</th>
+                            <th>Profit</th>
+                            <th>Latency</th>
+                        </tr>
+                    </thead>
+                    <tbody id="trades-body">
+                        <tr>
+                            <td colspan="6" class="no-trades">No trades yet</td>
+                        </tr>
+                    </tbody>
+                </table>
             </div>
         </div>
 
-        <div class="card">
-            <h3>Side-by-Side Comparison</h3>
-            <table class="comparison-table">
-                <thead>
-                    <tr>
-                        <th>Metric</th>
-                        <th>Standard</th>
-                        <th>Priority</th>
-                        <th>Difference</th>
-                        <th>% Change</th>
-                    </tr>
-                </thead>
-                <tbody id="comparisonBody">
-                </tbody>
-            </table>
-        </div>
-
-        <div class="card">
-            <h3>Visual Comparison</h3>
-            <div class="chart-container">
-                <div class="bar-chart" id="barChart"></div>
-            </div>
-            <div class="legend">
-                <div class="legend-item">
-                    <div class="legend-color standard"></div>
-                    <span>Standard Mode</span>
-                </div>
-                <div class="legend-item">
-                    <div class="legend-color priority"></div>
-                    <span>Priority Mode</span>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <div class="card">
-        <h3>Configuration History</h3>
-        <div class="history-list" id="historyList">
-            <p style="color: #666; text-align: center;">No saved configurations yet</p>
+        <div class="refresh-info">
+            Auto-refreshes every 5 seconds | Last update: <span id="last-update">--</span>
         </div>
     </div>
 
     <script>
-        let standardMetrics = null;
-        let priorityMetrics = null;
-        let configHistory = JSON.parse(localStorage.getItem('configHistory') || '[]');
-
-        function updateHistoryList() {
-            const list = document.getElementById('historyList');
-            if (configHistory.length === 0) {
-                list.innerHTML = '<p style="color: #666; text-align: center;">No saved configurations yet</p>';
-                return;
-            }
-
-            list.innerHTML = configHistory.map((config, i) => `
-                <div class="history-item" onclick="loadHistoryConfig(${i})">
-                    <strong>Config ${i + 1}</strong>: Min Liq $${config.minLiquidity}, Max Liq $${config.maxLiquidity}, Min Arb ${config.minArbPercent}%
-                    <div class="history-meta">${new Date(config.timestamp).toLocaleString()}</div>
-                </div>
-            `).join('');
+        // Format currency
+        function formatCurrency(cents) {
+            const dollars = cents / 100;
+            return '$' + dollars.toFixed(2);
         }
 
-        function loadHistoryConfig(index) {
-            const config = configHistory[index];
-            document.getElementById('minLiquidity').value = config.minLiquidity;
-            document.getElementById('maxLiquidity').value = config.maxLiquidity;
-            document.getElementById('minArbPercent').value = config.minArbPercent;
-            document.getElementById('sortInterval').value = config.sortInterval;
-            document.getElementById('liveBoost').value = config.liveBoost;
-            document.getElementById('profitWeight').value = config.profitWeight;
-            generateEnvCommand();
+        // Format time ago
+        function timeAgo(dateStr) {
+            const date = new Date(dateStr);
+            const now = new Date();
+            const seconds = Math.floor((now - date) / 1000);
+
+            if (seconds < 60) return seconds + 's ago';
+            if (seconds < 3600) return Math.floor(seconds / 60) + 'm ago';
+            if (seconds < 86400) return Math.floor(seconds / 3600) + 'h ago';
+            return Math.floor(seconds / 86400) + 'd ago';
         }
 
-        function saveConfig() {
-            const config = {
-                minLiquidity: parseFloat(document.getElementById('minLiquidity').value),
-                maxLiquidity: parseFloat(document.getElementById('maxLiquidity').value),
-                minArbPercent: parseFloat(document.getElementById('minArbPercent').value),
-                sortInterval: parseInt(document.getElementById('sortInterval').value),
-                liveBoost: parseFloat(document.getElementById('liveBoost').value),
-                profitWeight: parseFloat(document.getElementById('profitWeight').value),
-                timestamp: Date.now()
-            };
-
-            configHistory.unshift(config);
-            if (configHistory.length > 10) configHistory.pop();
-            localStorage.setItem('configHistory', JSON.stringify(configHistory));
-            updateHistoryList();
-            showStatus('Configuration saved!', 'success');
+        // Format hours
+        function formatHours(seconds) {
+            const hours = seconds / 3600;
+            if (hours < 1) return Math.floor(seconds / 60) + ' minutes';
+            return hours.toFixed(1) + ' hours';
         }
 
-        function loadConfig() {
-            if (configHistory.length > 0) {
-                loadHistoryConfig(0);
-                showStatus('Loaded most recent configuration', 'success');
-            } else {
-                showStatus('No saved configurations found', 'error');
-            }
-        }
+        // Load and display data
+        async function loadData() {
+            try {
+                // Try to load summary
+                const summaryRes = await fetch('../dashboard_data/summary.json');
+                if (!summaryRes.ok) throw new Error('No data yet - waiting for first trade');
+                const summary = await summaryRes.json();
 
-        function generateEnvCommand() {
-            const minLiq = parseFloat(document.getElementById('minLiquidity').value) * 100;
-            const maxLiq = parseFloat(document.getElementById('maxLiquidity').value) * 100;
-            const minArb = document.getElementById('minArbPercent').value;
-            const sortInt = document.getElementById('sortInterval').value;
-            const liveBoost = document.getElementById('liveBoost').value;
-            const profitWeight = document.getElementById('profitWeight').value;
-
-            const cmd = `export PRIORITY_MODE=1
-export MIN_LIQUIDITY_CENTS=${minLiq}
-export MAX_LIQUIDITY_CENTS=${maxLiq}
-export MIN_ARB_PERCENT=${minArb}
-export QUEUE_SORT_INTERVAL_SECS=${sortInt}
-export LIVE_PRIORITY_BOOST=${liveBoost}
-export PROFIT_WEIGHT=${profitWeight}
-export DRY_RUN=1
-
-# Run the bot
-cargo run --release`;
-
-            const envDiv = document.getElementById('envCommand');
-            envDiv.style.display = 'block';
-            envDiv.querySelector('pre').textContent = cmd;
-        }
-
-        function showStatus(message, type) {
-            const status = document.getElementById('status');
-            status.style.display = 'block';
-            status.className = 'status ' + type;
-            status.textContent = message;
-
-            if (type === 'success') {
-                setTimeout(() => { status.style.display = 'none'; }, 3000);
-            }
-        }
-
-        function loadFile(mode) {
-            const input = document.getElementById(mode + 'File');
-            const file = input.files[0];
-
-            if (!file) return;
-
-            const reader = new FileReader();
-            reader.onload = function(e) {
+                // Try to load trades
+                let trades = [];
                 try {
-                    const data = JSON.parse(e.target.result);
-                    if (mode === 'standard') {
-                        standardMetrics = data;
-                    } else {
-                        priorityMetrics = data;
+                    const tradesRes = await fetch('../dashboard_data/trades.json');
+                    if (tradesRes.ok) {
+                        trades = await tradesRes.json();
                     }
-                    showStatus(`Loaded ${mode} mode metrics`, 'success');
-                } catch (err) {
-                    showStatus(`Error parsing ${mode} file: ${err.message}`, 'error');
+                } catch (e) {
+                    console.log('No trades file yet');
                 }
-            };
-            reader.readAsText(file);
-        }
 
-        function loadSampleData() {
-            standardMetrics = {
-                priority_mode: false,
-                duration_secs: 86400,
-                opportunities_detected: 1500,
-                trades_executed: 85,
-                trades_rejected: 120,
-                rejected_low_profit: 80,
-                rejected_low_liquidity: 30,
-                trades_clamped: 10,
-                live_game_trades: 0,
-                total_profit_cents: 8500,
-                total_volume_cents: 750000,
-                total_fees_cents: 850,
-                avg_latency_ns: 45000000,
-                min_latency_ns: 12000000,
-                max_latency_ns: 234000000
-            };
+                // Hide loading, show dashboard
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('error').style.display = 'none';
+                document.getElementById('dashboard').style.display = 'block';
 
-            priorityMetrics = {
-                priority_mode: true,
-                duration_secs: 86400,
-                opportunities_detected: 1500,
-                trades_executed: 72,
-                trades_rejected: 280,
-                rejected_low_profit: 180,
-                rejected_low_liquidity: 60,
-                trades_clamped: 40,
-                live_game_trades: 28,
-                total_profit_cents: 11200,
-                total_volume_cents: 620000,
-                total_fees_cents: 720,
-                avg_latency_ns: 48000000,
-                min_latency_ns: 11000000,
-                max_latency_ns: 198000000
-            };
+                // Update status badge
+                const badge = document.getElementById('status-badge');
+                if (summary.is_dry_run) {
+                    badge.textContent = 'DRY RUN';
+                    badge.className = 'status-badge status-dry-run';
+                } else {
+                    badge.textContent = 'LIVE';
+                    badge.className = 'status-badge status-live';
+                }
 
-            showStatus('Sample data loaded!', 'success');
-            compareMetrics();
-        }
+                // Update stats
+                const profitEl = document.getElementById('total-profit');
+                profitEl.textContent = formatCurrency(summary.total_profit_cents);
+                profitEl.className = 'stat-value ' + (summary.total_profit_cents >= 0 ? 'positive' : 'negative');
 
-        function compareMetrics() {
-            if (!standardMetrics || !priorityMetrics) {
-                showStatus('Please load both standard and priority metrics files', 'error');
-                return;
+                document.getElementById('total-trades').textContent = summary.successful_trades;
+                document.getElementById('trades-subtext').textContent = summary.rejected_trades + ' rejected';
+
+                const pph = document.getElementById('profit-per-hour');
+                pph.textContent = formatCurrency(summary.profit_per_hour_cents) + '/hr';
+
+                const duration = new Date(summary.last_update) - new Date(summary.start_time);
+                document.getElementById('hours-running').textContent = formatHours(duration / 1000) + ' running';
+
+                document.getElementById('avg-profit').textContent = formatCurrency(summary.avg_profit_per_trade_cents);
+                document.getElementById('best-trade').textContent = formatCurrency(summary.best_trade_profit_cents);
+                document.getElementById('total-volume').textContent = formatCurrency(summary.total_volume_cents);
+
+                // 30-day projection
+                document.getElementById('bankroll').textContent = formatCurrency(summary.bankroll_cents);
+
+                // Calculate projection (simplified - same logic as Rust)
+                const hoursRunning = duration / 1000 / 3600;
+                if (hoursRunning > 0.1 && summary.total_volume_cents > 0) {
+                    const hourlyProfit = summary.profit_per_hour_cents;
+                    const hourlyReturnRate = summary.bankroll_cents > 0 ?
+                        hourlyProfit / summary.bankroll_cents : 0;
+
+                    const dailyRate = hourlyReturnRate * 24 * 100;
+                    document.getElementById('daily-rate').textContent = dailyRate.toFixed(2) + '%';
+
+                    // 30-day compound (8 trading hours/day)
+                    let bankroll = summary.bankroll_cents;
+                    const projections = [];
+                    for (let day = 1; day <= 30; day++) {
+                        const dailyProfit = bankroll * hourlyReturnRate * 8;
+                        bankroll += dailyProfit;
+                        projections.push({
+                            day,
+                            bankroll: bankroll
+                        });
+                    }
+
+                    const projectedProfit = bankroll - summary.bankroll_cents;
+                    document.getElementById('projected-profit').textContent = formatCurrency(projectedProfit);
+                    document.getElementById('projected-bankroll').textContent = formatCurrency(bankroll);
+
+                    // Draw chart
+                    renderChart(projections, summary.bankroll_cents);
+                }
+
+                // Update trades table
+                const tbody = document.getElementById('trades-body');
+                if (trades.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="6" class="no-trades">No trades yet - waiting for opportunities...</td></tr>';
+                } else {
+                    // Show most recent 20 trades
+                    const recentTrades = trades.slice(-20).reverse();
+                    tbody.innerHTML = recentTrades.map(trade => `
+                        <tr>
+                            <td>${timeAgo(trade.timestamp)}</td>
+                            <td>${trade.market_name.substring(0, 40)}${trade.market_name.length > 40 ? '...' : ''}</td>
+                            <td><span class="arb-type">${trade.arb_type}</span></td>
+                            <td>${trade.contracts}</td>
+                            <td class="trade-profit ${trade.profit_cents >= 0 ? 'positive' : 'negative'}">${formatCurrency(trade.profit_cents)}</td>
+                            <td>${trade.latency_ms.toFixed(1)}ms</td>
+                        </tr>
+                    `).join('');
+                }
+
+                // Update last update time
+                document.getElementById('last-update').textContent = new Date().toLocaleTimeString();
+
+            } catch (error) {
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('error').style.display = 'block';
+                document.getElementById('error').textContent = error.message +
+                    '\n\nMake sure the bot is running. The dashboard will auto-update when data is available.';
             }
+        }
 
-            document.getElementById('dashboard').style.display = 'block';
+        // Render simple bar chart
+        function renderChart(projections, startBankroll) {
+            const chart = document.getElementById('projection-chart');
+            const maxBankroll = Math.max(...projections.map(p => p.bankroll));
 
-            const std = standardMetrics;
-            const pri = priorityMetrics;
+            // Show every 5th day
+            const displayDays = projections.filter(p => p.day % 5 === 0 || p.day === 1 || p.day === 30);
 
-            // Calculate derived metrics
-            const stdHours = std.duration_secs / 3600;
-            const priHours = pri.duration_secs / 3600;
-
-            const stdTradeRate = stdHours > 0 ? std.trades_executed / stdHours : 0;
-            const priTradeRate = priHours > 0 ? pri.trades_executed / priHours : 0;
-
-            const stdConversion = std.opportunities_detected > 0 ? (std.trades_executed / std.opportunities_detected * 100) : 0;
-            const priConversion = pri.opportunities_detected > 0 ? (pri.trades_executed / pri.opportunities_detected * 100) : 0;
-
-            const stdProfitHr = stdHours > 0 ? (std.total_profit_cents / 100) / stdHours : 0;
-            const priProfitHr = priHours > 0 ? (pri.total_profit_cents / 100) / priHours : 0;
-
-            const stdRoR = std.total_volume_cents > 0 ? (std.total_profit_cents / std.total_volume_cents * 100) : 0;
-            const priRoR = pri.total_volume_cents > 0 ? (pri.total_profit_cents / pri.total_volume_cents * 100) : 0;
-
-            // Update summary cards (showing priority mode values with comparison)
-            updateMetric('tradesExecuted', pri.trades_executed, pri.trades_executed - std.trades_executed);
-            updateMetric('tradeRate', priTradeRate.toFixed(1) + '/hr', priTradeRate - stdTradeRate);
-            updateMetric('conversionRate', priConversion.toFixed(1) + '%', priConversion - stdConversion);
-            updateMetric('liveGameTrades', pri.live_game_trades, null);
-
-            updateMetric('totalProfit', '$' + (pri.total_profit_cents / 100).toFixed(2), (pri.total_profit_cents - std.total_profit_cents) / 100);
-            updateMetric('profitPerHour', '$' + priProfitHr.toFixed(2) + '/hr', priProfitHr - stdProfitHr);
-            updateMetric('totalVolume', '$' + (pri.total_volume_cents / 100).toFixed(2), (pri.total_volume_cents - std.total_volume_cents) / 100);
-            updateMetric('rateOfReturn', priRoR.toFixed(2) + '%', priRoR - stdRoR);
-
-            updateMetric('totalRejected', pri.trades_rejected, pri.trades_rejected - std.trades_rejected, true);
-            updateMetric('rejectedLowProfit', pri.rejected_low_profit, pri.rejected_low_profit - std.rejected_low_profit, true);
-            updateMetric('rejectedLowLiquidity', pri.rejected_low_liquidity, pri.rejected_low_liquidity - std.rejected_low_liquidity, true);
-            updateMetric('tradesClamped', pri.trades_clamped, pri.trades_clamped - std.trades_clamped, true);
-
-            updateMetric('avgLatency', (pri.avg_latency_ns / 1000000).toFixed(2) + 'ms', (pri.avg_latency_ns - std.avg_latency_ns) / 1000000, true);
-            updateMetric('minLatency', (pri.min_latency_ns / 1000000).toFixed(2) + 'ms', null);
-            updateMetric('maxLatency', (pri.max_latency_ns / 1000000).toFixed(2) + 'ms', null);
-
-            // Build comparison table
-            const comparisons = [
-                { label: 'Duration', std: stdHours.toFixed(1) + 'h', pri: priHours.toFixed(1) + 'h', diff: '-', pct: '-' },
-                { label: 'Trades Executed', std: std.trades_executed, pri: pri.trades_executed, diff: pri.trades_executed - std.trades_executed, pct: pctChange(std.trades_executed, pri.trades_executed) },
-                { label: 'Trade Rate (/hr)', std: stdTradeRate.toFixed(1), pri: priTradeRate.toFixed(1), diff: (priTradeRate - stdTradeRate).toFixed(1), pct: pctChange(stdTradeRate, priTradeRate) },
-                { label: 'Total Profit ($)', std: (std.total_profit_cents/100).toFixed(2), pri: (pri.total_profit_cents/100).toFixed(2), diff: ((pri.total_profit_cents - std.total_profit_cents)/100).toFixed(2), pct: pctChange(std.total_profit_cents, pri.total_profit_cents) },
-                { label: 'Profit/Hour ($)', std: stdProfitHr.toFixed(2), pri: priProfitHr.toFixed(2), diff: (priProfitHr - stdProfitHr).toFixed(2), pct: pctChange(stdProfitHr, priProfitHr) },
-                { label: 'Total Volume ($)', std: (std.total_volume_cents/100).toFixed(0), pri: (pri.total_volume_cents/100).toFixed(0), diff: ((pri.total_volume_cents - std.total_volume_cents)/100).toFixed(0), pct: pctChange(std.total_volume_cents, pri.total_volume_cents) },
-                { label: 'Rate of Return (%)', std: stdRoR.toFixed(2), pri: priRoR.toFixed(2), diff: (priRoR - stdRoR).toFixed(2), pct: '-' },
-                { label: 'Total Fees ($)', std: (std.total_fees_cents/100).toFixed(2), pri: (pri.total_fees_cents/100).toFixed(2), diff: ((pri.total_fees_cents - std.total_fees_cents)/100).toFixed(2), pct: pctChange(std.total_fees_cents, pri.total_fees_cents) },
-                { label: 'Trades Rejected', std: std.trades_rejected, pri: pri.trades_rejected, diff: pri.trades_rejected - std.trades_rejected, pct: pctChange(std.trades_rejected, pri.trades_rejected) },
-                { label: 'Live Game Trades', std: '-', pri: pri.live_game_trades, diff: '-', pct: '-' },
-                { label: 'Avg Latency (ms)', std: (std.avg_latency_ns/1e6).toFixed(1), pri: (pri.avg_latency_ns/1e6).toFixed(1), diff: ((pri.avg_latency_ns - std.avg_latency_ns)/1e6).toFixed(1), pct: pctChange(std.avg_latency_ns, pri.avg_latency_ns) }
-            ];
-
-            const tbody = document.getElementById('comparisonBody');
-            tbody.innerHTML = comparisons.map(row => {
-                const diffClass = typeof row.diff === 'number' ? (row.diff > 0 ? 'diff-positive' : (row.diff < 0 ? 'diff-negative' : '')) : '';
-                const diffStr = typeof row.diff === 'number' ? (row.diff > 0 ? '+' + row.diff : row.diff) : row.diff;
-                return `<tr>
-                    <td>${row.label}</td>
-                    <td>${row.std}</td>
-                    <td>${row.pri}</td>
-                    <td class="${diffClass}">${diffStr}</td>
-                    <td class="${diffClass}">${row.pct}</td>
-                </tr>`;
-            }).join('');
-
-            // Build bar chart
-            const chartData = [
-                { label: 'Trades', std: std.trades_executed, pri: pri.trades_executed },
-                { label: 'Profit ($)', std: std.total_profit_cents/100, pri: pri.total_profit_cents/100 },
-                { label: 'Volume ($k)', std: std.total_volume_cents/100000, pri: pri.total_volume_cents/100000 },
-                { label: 'Rejected', std: std.trades_rejected, pri: pri.trades_rejected }
-            ];
-
-            const maxValue = Math.max(...chartData.flatMap(d => [d.std, d.pri]));
-            const barChart = document.getElementById('barChart');
-            barChart.innerHTML = chartData.map(d => {
-                const stdHeight = (d.std / maxValue * 150);
-                const priHeight = (d.pri / maxValue * 150);
-                return `<div class="bar-group">
-                    <div class="bar standard" style="height: ${stdHeight}px;">
-                        <span class="bar-label">${d.label}</span>
+            chart.innerHTML = displayDays.map(p => {
+                const height = ((p.bankroll - startBankroll) / (maxBankroll - startBankroll)) * 200 + 20;
+                return `
+                    <div class="bar-group">
+                        <div class="bar" style="height: ${height}px;" title="Day ${p.day}: ${formatCurrency(p.bankroll)}"></div>
+                        <div class="bar-label">Day ${p.day}</div>
                     </div>
-                    <div class="bar priority" style="height: ${priHeight}px;"></div>
-                </div>`;
+                `;
             }).join('');
         }
 
-        function updateMetric(id, value, diff, lowerIsBetter = false) {
-            const el = document.getElementById(id);
-            let html = value;
+        // Initial load
+        loadData();
 
-            if (diff !== null && diff !== undefined && !isNaN(diff)) {
-                const isPositive = lowerIsBetter ? diff < 0 : diff > 0;
-                const sign = diff > 0 ? '+' : '';
-                const className = isPositive ? 'positive' : 'negative';
-                const diffStr = typeof diff === 'number' ? diff.toFixed(1) : diff;
-                html += ` <small class="${className}">(${sign}${diffStr})</small>`;
-            }
-
-            el.innerHTML = html;
-        }
-
-        function pctChange(oldVal, newVal) {
-            if (oldVal === 0) return newVal > 0 ? '+∞%' : '0%';
-            const pct = ((newVal - oldVal) / Math.abs(oldVal) * 100);
-            return (pct > 0 ? '+' : '') + pct.toFixed(1) + '%';
-        }
-
-        // Initialize
-        updateHistoryList();
+        // Auto-refresh every 5 seconds
+        setInterval(loadData, 5000);
     </script>
 </body>
 </html>

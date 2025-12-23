@@ -34,6 +34,7 @@ mod polymarket_clob;
 mod position_tracker;
 mod priority_config;
 mod priority_queue;
+mod trade_log;
 mod types;
 
 use anyhow::{Context, Result};
@@ -98,6 +99,15 @@ async fn main() -> Result<()> {
     // Initialize metrics collection
     let metrics = init_metrics(priority_config.enabled);
     info!("   Metrics: ENABLED (summary every hour, saved to metrics_*.json)");
+
+    // Initialize trade logger for dashboard
+    let bankroll_cents = std::env::var("BANKROLL")
+        .ok()
+        .and_then(|v| v.parse::<u64>().ok())
+        .unwrap_or(10000) * 100; // Default $100, convert to cents
+    trade_log::init_trade_logger("./dashboard_data", dry_run, bankroll_cents);
+    info!("   Dashboard: ENABLED (data in ./dashboard_data/)");
+    info!("   Bankroll: ${:.2}", bankroll_cents as f64 / 100.0);
 
     // Load Kalshi credentials
     let kalshi_config = KalshiConfig::from_env()?;
