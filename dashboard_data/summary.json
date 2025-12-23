@@ -1,0 +1,18 @@
+{
+  "start_time": "2025-12-23T02:46:11.106107Z",
+  "last_update": "2025-12-23T21:05:15.481708Z",
+  "total_trades": 1,
+  "successful_trades": 1,
+  "rejected_trades": 0,
+  "total_profit_cents": 655,
+  "total_volume_cents": 64845,
+  "total_fees_cents": 0,
+  "avg_profit_per_trade_cents": 655.0,
+  "trades_per_hour": 0.054591774839257555,
+  "profit_per_hour_cents": 35.757612519713696,
+  "best_trade_profit_cents": 655,
+  "worst_trade_profit_cents": 655,
+  "avg_latency_ms": 50922663.577333,
+  "is_dry_run": true,
+  "bankroll_cents": 1000000
+}

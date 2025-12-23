@@ -1,0 +1,19 @@
+[
+  {
+    "id": 1,
+    "timestamp": "2025-12-23T21:05:15.478776Z",
+    "market_id": 141,
+    "market_name": "Oklahoma City at San Antonio: Total Points - Oklahoma City at San Antonio: Total Points",
+    "arb_type": "PolyOnly",
+    "yes_price_cents": 48,
+    "no_price_cents": 51,
+    "contracts": 655,
+    "profit_cents": 655,
+    "volume_cents": 64845,
+    "fees_cents": 0,
+    "latency_ms": 50922663.577333,
+    "status": "dryrun",
+    "rejection_reason": null,
+    "is_dry_run": true
+  }
+]
