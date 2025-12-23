@@ -1166,7 +1166,21 @@ const DASHBOARD_HTML: &str = r##"<!DOCTYPE html>
             }
 
             tbody.innerHTML = trades.map(t => {
-                const time = new Date(t.timestamp).toLocaleTimeString();
+                // Format time in US Central without seconds
+                const date = new Date(t.timestamp);
+                const time = date.toLocaleTimeString('en-US', {
+                    timeZone: 'America/Chicago',
+                    hour: 'numeric',
+                    minute: '2-digit',
+                    hour12: true
+                });
+
+                // Fix latency - convert ns to ms if too large
+                let latencyMs = t.latency_ms;
+                if (latencyMs > 60000) {
+                    latencyMs = latencyMs / 1000000;
+                }
+
                 const profitClass = t.profit_cents >= 0 ? 'profit-positive' : 'profit-negative';
                 const statusClass = t.status === 'executed' ? 'status-executed' :
                                    t.status === 'dryrun' ? 'status-dryrun' : 'status-rejected';
@@ -1176,7 +1190,7 @@ const DASHBOARD_HTML: &str = r##"<!DOCTYPE html>
                     <td>${t.arb_type}</td>
                     <td class="${profitClass}">${formatCents(t.profit_cents)}</td>
                     <td>${formatCents(t.volume_cents)}</td>
-                    <td>${t.latency_ms.toFixed(1)}ms</td>
+                    <td>${latencyMs.toFixed(1)}ms</td>
                     <td class="${statusClass}">${t.status}</td>
                 </tr>`;
             }).join('');
