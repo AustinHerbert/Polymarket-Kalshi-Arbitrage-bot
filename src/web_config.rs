@@ -278,25 +278,16 @@ fn get_settings_meta() -> Vec<SettingMeta> {
         SettingMeta {
             key: "min_liquidity_cents",
             label: "Min Trade Size ($)",
-            description: "Minimum trade size per side in dollars",
+            description: "Minimum trade size - ignores opportunities smaller than this",
             setting_type: "dollars",
             requires_restart: false,
             min: Some(10),
             max: Some(10000),
         },
         SettingMeta {
-            key: "max_liquidity_cents",
-            label: "Max Trade Size ($)",
-            description: "Maximum trade size per side in dollars",
-            setting_type: "dollars",
-            requires_restart: false,
-            min: Some(100),
-            max: Some(100000),
-        },
-        SettingMeta {
             key: "max_daily_loss_cents",
             label: "Max Daily Loss ($)",
-            description: "Circuit breaker: halt trading if daily loss exceeds this",
+            description: "Circuit breaker: halt ALL trading if daily loss exceeds this",
             setting_type: "dollars",
             requires_restart: false,
             min: Some(100),
@@ -305,7 +296,7 @@ fn get_settings_meta() -> Vec<SettingMeta> {
         SettingMeta {
             key: "max_position_size_cents",
             label: "Max Position Size ($)",
-            description: "Maximum single position size allowed",
+            description: "Maximum exposure per market (trade size capped by this + liquidity)",
             setting_type: "dollars",
             requires_restart: false,
             min: Some(100),
@@ -523,8 +514,16 @@ async fn update_config(
 
 /// POST /api/restart
 async fn trigger_restart() -> impl IntoResponse {
-    info!("[WEB] Restart requested via web UI");
-    (StatusCode::OK, "Restart signal sent. Please restart the bot manually.")
+    info!("[WEB] Restart requested via web UI - shutting down in 2 seconds");
+
+    // Spawn a task to exit after a short delay (allows response to be sent)
+    tokio::spawn(async {
+        tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+        info!("[WEB] Exiting for restart...");
+        std::process::exit(0);
+    });
+
+    (StatusCode::OK, "Bot shutting down in 2 seconds. Use run_bot.sh for auto-restart.")
 }
 
 /// GET /
@@ -1002,12 +1001,7 @@ const DASHBOARD_HTML: &str = r##"<!DOCTYPE html>
             </div>
 
             <div class="section">
-                <div class="section-title">Position Limits</div>
-                <div id="liquidity-settings"></div>
-            </div>
-
-            <div class="section">
-                <div class="section-title">Circuit Breaker</div>
+                <div class="section-title">Risk Management</div>
                 <div id="circuit-settings"></div>
             </div>
 
@@ -1051,8 +1045,7 @@ const DASHBOARD_HTML: &str = r##"<!DOCTYPE html>
             'dry_run': 'trading-settings',
             'priority_mode': 'trading-settings',
             'crypto_enabled': 'trading-settings',
-            'min_liquidity_cents': 'liquidity-settings',
-            'max_liquidity_cents': 'liquidity-settings',
+            'min_liquidity_cents': 'circuit-settings',
             'max_daily_loss_cents': 'circuit-settings',
             'max_position_size_cents': 'circuit-settings',
             'cooldown_secs': 'circuit-settings',
