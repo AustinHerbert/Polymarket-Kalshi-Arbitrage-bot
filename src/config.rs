@@ -135,8 +135,8 @@ pub fn get_league_configs() -> Vec<LeagueConfig> {
             league_code: "wnba",
             poly_prefix: "wnba",
             kalshi_series_game: "KXWNBAGAME",
-            kalshi_series_spread: Some("KXWNBASPREAD"),
-            kalshi_series_total: Some("KXWNBATOTAL"),
+            kalshi_series_spread: None,  // Not confirmed on Kalshi
+            kalshi_series_total: None,   // Not confirmed on Kalshi
             kalshi_series_btts: None,
         },
         LeagueConfig {
