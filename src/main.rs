@@ -37,6 +37,7 @@ mod priority_config;
 mod priority_queue;
 mod trade_log;
 mod types;
+mod web_config;
 
 use anyhow::{Context, Result};
 use std::sync::Arc;
@@ -101,6 +102,15 @@ async fn main() -> Result<()> {
     // Initialize metrics collection
     let metrics = init_metrics(priority_config.enabled);
     info!("   Metrics: ENABLED (summary every hour, saved to metrics_*.json)");
+
+    // Start web configuration dashboard
+    let web_config = Arc::new(RwLock::new(web_config::RuntimeConfig::from_env()));
+    let web_config_clone = web_config.clone();
+    tokio::spawn(async move {
+        web_config::run_web_server(web_config_clone).await;
+    });
+    let web_port = std::env::var("WEB_CONFIG_PORT").unwrap_or_else(|_| "8080".to_string());
+    info!("   Web Config: http://0.0.0.0:{}", web_port);
 
     // Initialize trade logger for dashboard
     let bankroll_cents = std::env::var("BANKROLL")
