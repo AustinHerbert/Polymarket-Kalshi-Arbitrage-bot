@@ -64,7 +64,7 @@ impl Default for RuntimeConfig {
             arb_threshold_cents: 995,
             dry_run: true,
             priority_mode: true,
-            crypto_enabled: false,
+            crypto_enabled: true,
             min_liquidity_cents: 25000,
             max_liquidity_cents: 250000,
             max_daily_loss_cents: 100000,
