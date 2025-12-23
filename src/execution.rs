@@ -709,8 +709,9 @@ pub struct ExecutionResult {
 }
 
 /// Create a new execution request channel with bounded capacity
+/// Increased to 1024 for high-volume scenarios to reduce backpressure
 pub fn create_execution_channel() -> (mpsc::Sender<FastExecutionRequest>, mpsc::Receiver<FastExecutionRequest>) {
-    mpsc::channel(256)
+    mpsc::channel(1024)
 }
 
 /// Main execution event loop - processes arbitrage opportunities as they arrive

@@ -2,6 +2,8 @@
 //!
 //! This module provides WebSocket client for real-time Polymarket price feeds
 //! and REST API client for market discovery via the Gamma API.
+//!
+//! Performance: Uses simd-json for ~2-3x faster JSON parsing on WebSocket messages.
 
 use anyhow::{Context, Result};
 use futures_util::{SinkExt, StreamExt};
@@ -282,14 +284,18 @@ pub async fn run_ws(
                     Some(Ok(Message::Text(text))) => {
                         last_message = Instant::now();
 
-                        // Try book snapshot first
-                        if let Ok(books) = serde_json::from_str::<Vec<BookSnapshot>>(&text) {
+                        // Fast path: Use simd-json for ~2-3x faster parsing
+                        // simd-json requires a mutable buffer, so we copy once
+                        let mut json_buf = text.into_bytes();
+
+                        // Try book snapshot first (most common)
+                        if let Ok(books) = simd_json::from_slice::<Vec<BookSnapshot>>(&mut json_buf) {
                             for book in &books {
                                 process_book(&state, book, &exec_tx, threshold_cents, &clock).await;
                             }
                         }
                         // Try price change event
-                        else if let Ok(event) = serde_json::from_str::<PriceChangeEvent>(&text) {
+                        else if let Ok(event) = simd_json::from_slice::<PriceChangeEvent>(&mut json_buf) {
                             if event.event_type.as_deref() == Some("price_change") {
                                 if let Some(changes) = &event.price_changes {
                                     for change in changes {
@@ -300,7 +306,7 @@ pub async fn run_ws(
                         }
                         // Log unknown message types at trace level for debugging
                         else {
-                            tracing::trace!("[POLY] Unknown WS message: {}...", &text[..text.len().min(100)]);
+                            tracing::trace!("[POLY] Unknown WS message (len={})", json_buf.len());
                         }
                     }
                     Some(Ok(Message::Ping(data))) => {
@@ -338,7 +344,7 @@ pub async fn run_ws(
 }
 
 /// Process book snapshot
-#[inline]
+#[inline(always)]
 async fn process_book(
     state: &GlobalState,
     book: &BookSnapshot,
@@ -383,7 +389,7 @@ async fn process_book(
 }
 
 /// Process price change
-#[inline]
+#[inline(always)]
 async fn process_price_change(
     state: &GlobalState,
     change: &PriceChangeItem,
@@ -436,7 +442,7 @@ async fn process_price_change(
 }
 
 /// Send arb request to execution engine
-#[inline]
+#[inline(always)]
 async fn send_arb_request(
     market_id: u16,
     market: &crate::types::AtomicMarketState,

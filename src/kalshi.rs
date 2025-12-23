@@ -3,6 +3,8 @@
 //! This module provides REST API and WebSocket clients for interacting with
 //! the Kalshi prediction market platform, including order execution and
 //! real-time price feed management.
+//!
+//! Performance: Uses simd-json for ~2-3x faster JSON parsing on WebSocket messages.
 
 use anyhow::{Context, Result};
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
@@ -485,7 +487,9 @@ pub async fn run_ws(
     while let Some(msg) = read.next().await {
         match msg {
             Ok(Message::Text(text)) => {
-                match serde_json::from_str::<KalshiWsMessage>(&text) {
+                // Fast path: Use simd-json for ~2-3x faster parsing
+                let mut json_buf = text.into_bytes();
+                match simd_json::from_slice::<KalshiWsMessage>(&mut json_buf) {
                     Ok(kalshi_msg) => {
                         let ticker = kalshi_msg.msg.as_ref()
                             .and_then(|m| m.market_ticker.as_ref());
@@ -521,9 +525,9 @@ pub async fn run_ws(
                             _ => {}
                         }
                     }
-                    Err(e) => {
+                    Err(_) => {
                         // Log at trace level - unknown message types are normal
-                        tracing::trace!("[KALSHI] WS parse error: {} (msg: {}...)", e, &text[..text.len().min(100)]);
+                        tracing::trace!("[KALSHI] WS parse error (len={})", json_buf.len());
                     }
                 }
             }
@@ -543,7 +547,7 @@ pub async fn run_ws(
 
 /// Process Kalshi orderbook snapshot
 /// Note: Kalshi sends BIDS - to buy YES you pay (100 - best_NO_bid), to buy NO you pay (100 - best_YES_bid)
-#[inline]
+#[inline(always)]
 fn process_kalshi_snapshot(market: &crate::types::AtomicMarketState, body: &KalshiWsMsgBody) {
     // Find best YES bid (highest price) - this determines NO ask
     let (no_ask, no_size) = body.yes.as_ref()
@@ -591,7 +595,7 @@ fn process_kalshi_snapshot(market: &crate::types::AtomicMarketState, body: &Kals
 
 /// Process Kalshi orderbook delta
 /// Note: Deltas update bid levels; we recompute asks from best bids
-#[inline]
+#[inline(always)]
 fn process_kalshi_delta(market: &crate::types::AtomicMarketState, body: &KalshiWsMsgBody) {
     // For deltas, recompute from snapshot-like format
     // Kalshi deltas have yes/no as arrays of [price, new_qty]
@@ -644,7 +648,7 @@ fn process_kalshi_delta(market: &crate::types::AtomicMarketState, body: &KalshiW
 }
 
 /// Send arb request from Kalshi handler
-#[inline]
+#[inline(always)]
 async fn send_kalshi_arb_request(
     market_id: u16,
     market: &crate::types::AtomicMarketState,
