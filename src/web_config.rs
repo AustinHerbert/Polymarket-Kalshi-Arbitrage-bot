@@ -97,7 +97,7 @@ impl RuntimeConfig {
                 .parse().unwrap_or(995),
             dry_run: parse_bool(&get_env("DRY_RUN", "1")),
             priority_mode: parse_bool(&get_env("PRIORITY_MODE", "1")),
-            crypto_enabled: parse_bool(&get_env("CRYPTO_ENABLED", "0")),
+            crypto_enabled: parse_bool(&get_env("CRYPTO_ENABLED", "1")),
             auto_optimize: parse_bool(&get_env("AUTO_OPTIMIZE", "0")),
             min_liquidity_cents: get_env("MIN_LIQUIDITY_CENTS", "25000")
                 .parse().unwrap_or(25000),

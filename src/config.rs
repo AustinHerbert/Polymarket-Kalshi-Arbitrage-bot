@@ -435,7 +435,7 @@ pub fn crypto_enabled() -> bool {
     *CACHED.get_or_init(|| {
         std::env::var("CRYPTO_ENABLED")
             .map(|v| v == "1" || v.to_lowercase() == "true")
-            .unwrap_or(false)  // Disabled by default for safety
+            .unwrap_or(true)  // Enabled by default - set CRYPTO_ENABLED=0 to disable
     })
 }
 

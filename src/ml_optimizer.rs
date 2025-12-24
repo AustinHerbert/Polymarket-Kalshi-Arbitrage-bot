@@ -195,6 +195,12 @@ impl MlOptimizer {
         ("NCAAF", &["Moneyline", "Spread", "Total"]),
         ("NCAAMB", &["Moneyline", "Spread", "Total"]),
         ("NCAAWB", &["Moneyline", "Spread", "Total"]),
+        // Crypto markets
+        ("BTC", &["PriceBracket", "UpDown", "Hourly", "Daily"]),
+        ("ETH", &["PriceBracket", "UpDown", "Hourly", "Daily"]),
+        ("SOL", &["UpDown"]),
+        ("XRP", &["UpDown"]),
+        ("DOGE", &["UpDown"]),
     ];
 
     pub fn new(persist_path: &str) -> Self {
@@ -326,6 +332,12 @@ impl MlOptimizer {
             "ncaaf" | "cfb" | "college_football" => "NCAAF",
             "ncaamb" | "cbb" | "ncaab" | "college_basketball" => "NCAAMB",
             "ncaawb" | "wcbb" | "womens_college_basketball" => "NCAAWB",
+            // Crypto
+            "btc" | "bitcoin" => "BTC",
+            "eth" | "ethereum" => "ETH",
+            "sol" | "solana" => "SOL",
+            "xrp" | "ripple" => "XRP",
+            "doge" | "dogecoin" => "DOGE",
             _ => league,
         };
 
@@ -335,6 +347,11 @@ impl MlOptimizer {
             "spread" | "handicap" => "Spread",
             "total" | "overunder" | "over_under" => "Total",
             "btts" | "both_teams_to_score" => "BTTS",
+            // Crypto market types
+            "pricebracket" | "price_bracket" | "bracket" => "PriceBracket",
+            "updown" | "up_down" | "up/down" => "UpDown",
+            "hourly" | "1h" => "Hourly",
+            "daily" | "1d" => "Daily",
             _ => market_type,
         };
 
