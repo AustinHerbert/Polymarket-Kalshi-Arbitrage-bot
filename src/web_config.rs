@@ -1003,19 +1003,68 @@ pub async fn run_web_server(config: Arc<RwLock<RuntimeConfig>>) {
     let addr = format!("0.0.0.0:{}", port);
     info!("[WEB] Starting config dashboard on http://{}", addr);
 
-    // Use socket2 to set SO_REUSEADDR before binding
-    let socket = socket2::Socket::new(
-        socket2::Domain::IPV4,
-        socket2::Type::STREAM,
-        Some(socket2::Protocol::TCP),
-    ).expect("Failed to create socket");
-    socket.set_reuse_address(true).expect("Failed to set SO_REUSEADDR");
-    socket.set_nonblocking(true).expect("Failed to set nonblocking");
-    let addr_parsed: std::net::SocketAddr = addr.parse().expect("Invalid address");
-    socket.bind(&addr_parsed.into()).expect("Failed to bind socket");
-    socket.listen(1024).expect("Failed to listen");
-    let std_listener: std::net::TcpListener = socket.into();
-    let listener = tokio::net::TcpListener::from_std(std_listener).expect("Failed to create tokio listener");
+    // Retry binding with exponential backoff to handle port release delay
+    let listener = {
+        let addr_parsed: std::net::SocketAddr = addr.parse().expect("Invalid address");
+        let mut last_err = None;
+        let mut bound_listener = None;
+
+        for attempt in 0..5 {
+            if attempt > 0 {
+                let delay_ms = 500 * (1 << attempt); // 1000, 2000, 4000, 8000ms
+                warn!("[WEB] Port {} in use, retrying in {}ms (attempt {}/5)", port, delay_ms, attempt + 1);
+                tokio::time::sleep(tokio::time::Duration::from_millis(delay_ms)).await;
+            }
+
+            let socket = match socket2::Socket::new(
+                socket2::Domain::IPV4,
+                socket2::Type::STREAM,
+                Some(socket2::Protocol::TCP),
+            ) {
+                Ok(s) => s,
+                Err(e) => {
+                    last_err = Some(format!("Failed to create socket: {}", e));
+                    continue;
+                }
+            };
+
+            // Set socket options for immediate reuse
+            let _ = socket.set_reuse_address(true);
+            #[cfg(target_os = "linux")]
+            let _ = socket.set_reuse_port(true);
+            let _ = socket.set_nonblocking(true);
+
+            if let Err(e) = socket.bind(&addr_parsed.into()) {
+                last_err = Some(format!("Bind failed: {}", e));
+                continue;
+            }
+
+            if let Err(e) = socket.listen(1024) {
+                last_err = Some(format!("Listen failed: {}", e));
+                continue;
+            }
+
+            let std_listener: std::net::TcpListener = socket.into();
+            match tokio::net::TcpListener::from_std(std_listener) {
+                Ok(l) => {
+                    bound_listener = Some(l);
+                    break;
+                }
+                Err(e) => {
+                    last_err = Some(format!("Tokio listener failed: {}", e));
+                    continue;
+                }
+            }
+        }
+
+        match bound_listener {
+            Some(l) => l,
+            None => {
+                warn!("[WEB] Failed to bind after 5 attempts: {:?}", last_err);
+                return; // Don't crash the whole bot, just skip web UI
+            }
+        }
+    };
     if let Err(e) = axum::serve(listener, app).await {
         warn!("[WEB] Server error: {}", e);
     }
