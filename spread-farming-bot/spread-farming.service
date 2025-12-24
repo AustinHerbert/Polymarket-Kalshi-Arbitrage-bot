@@ -1,0 +1,19 @@
+[Unit]
+Description=Polymarket Spread Farming Bot
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/home/user/trading-bots/spread-farming-bot
+ExecStart=/home/user/trading-bots/spread-farming-bot/target/release/spread-farming-bot
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+# Environment
+Environment=RUST_LOG=spread_farming_bot=info
+
+[Install]
+WantedBy=multi-user.target
