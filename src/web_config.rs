@@ -1594,55 +1594,24 @@ const DASHBOARD_HTML: &str = r##"<!DOCTYPE html>
 
         <!-- Insights Tab -->
         <div id="tab-insights" class="tab-content">
-            <!-- AI Top Recommendation -->
+            <!-- ML Top Recommendation -->
             <div class="section" id="ai-top-rec-section" style="display:none;">
-                <div class="section-title">🧠 AI Top Recommendation</div>
+                <div class="section-title">🧠 ML Recommendation</div>
                 <div id="ai-top-recommendation" style="background: linear-gradient(135deg, #238636 0%, #2ea043 100%); border-radius: 8px; padding: 20px; color: white;">
                 </div>
             </div>
 
-            <!-- AI Daily Summary -->
+            <!-- ML Daily Report -->
             <div class="section">
-                <div class="section-title">📊 Daily Summary</div>
-                <div id="ai-summary" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px;">
-                    <div class="metric-card">
-                        <div class="metric-value" id="ai-total-opps">0</div>
-                        <div class="metric-label">Opportunities Scanned</div>
-                    </div>
-                    <div class="metric-card">
-                        <div class="metric-value positive" id="ai-executed">0</div>
-                        <div class="metric-label">Trades Executed</div>
-                    </div>
-                    <div class="metric-card">
-                        <div class="metric-value warning" id="ai-missed">0</div>
-                        <div class="metric-label">Missed Opportunities</div>
-                    </div>
-                    <div class="metric-card">
-                        <div class="metric-value positive" id="ai-profit">$0</div>
-                        <div class="metric-label">Actual Profit</div>
-                    </div>
-                    <div class="metric-card">
-                        <div class="metric-value warning" id="ai-missed-profit">$0</div>
-                        <div class="metric-label">Missed Profit</div>
-                    </div>
-                    <div class="metric-card">
-                        <div class="metric-value" id="ai-peak-hour">N/A</div>
-                        <div class="metric-label">Peak Activity</div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- AI Insights List -->
-            <div class="section">
-                <div class="section-title">💡 AI Optimization Insights</div>
+                <div class="section-title">🤖 ML Daily Report</div>
                 <div id="ai-insights-list" style="display: flex; flex-direction: column; gap: 12px;">
-                    <div style="color: #8b949e; padding: 20px; text-align: center;">Loading AI insights...</div>
+                    <div style="color: #8b949e; padding: 20px; text-align: center;">Loading ML insights...</div>
                 </div>
             </div>
 
-            <!-- Performance by Category -->
+            <!-- Performance by Sport/Category -->
             <div class="section">
-                <div class="section-title">📈 Performance by Market Category</div>
+                <div class="section-title">📈 Performance by Sport</div>
                 <div id="ai-performance-table" style="overflow-x: auto;">
                     <table class="trade-table">
                         <thead>
@@ -1664,13 +1633,6 @@ const DASHBOARD_HTML: &str = r##"<!DOCTYPE html>
                 </div>
             </div>
 
-            <!-- Markets Tracked (moved to bottom) -->
-            <div class="section">
-                <div class="section-title" id="markets-title">Markets Tracked (0)</div>
-                <div id="markets-grouped" style="display: flex; flex-direction: column; gap: 16px;">
-                    <div style="color: #8b949e; padding: 20px; text-align: center;">Loading markets...</div>
-                </div>
-            </div>
         </div>
 
         <!-- Open Positions Tab -->
@@ -1804,14 +1766,13 @@ const DASHBOARD_HTML: &str = r##"<!DOCTYPE html>
             document.getElementById('content').style.display = 'none';
 
             try {
-                const [configRes, metaRes, statusRes, analyticsRes, tradesRes, positionsRes, insightsRes, aiInsightsRes] = await Promise.all([
+                const [configRes, metaRes, statusRes, analyticsRes, tradesRes, positionsRes, aiInsightsRes] = await Promise.all([
                     fetch('/api/config'),
                     fetch('/api/meta'),
                     fetch('/api/status'),
                     fetch('/api/analytics'),
                     fetch('/api/trades'),
                     fetch('/api/positions'),
-                    fetch('/api/insights'),
                     fetch('/api/ai-insights')
                 ]);
 
@@ -1821,14 +1782,12 @@ const DASHBOARD_HTML: &str = r##"<!DOCTYPE html>
                 const analytics = await analyticsRes.json();
                 const trades = await tradesRes.json();
                 const positions = await positionsRes.json();
-                const insights = await insightsRes.json();
                 const aiInsights = await aiInsightsRes.json();
 
                 updateStatus(status);
                 updateAnalytics(analytics);
                 updateTrades(trades);
                 updatePositions(positions);
-                updateInsights(insights);
                 updateAiInsights(aiInsights);
                 renderSettings();
 
@@ -1839,37 +1798,7 @@ const DASHBOARD_HTML: &str = r##"<!DOCTYPE html>
             document.getElementById('loader').style.display = 'none';
         }
 
-        function updateInsights(data) {
-            // Update markets title
-            document.getElementById('markets-title').textContent = `Markets Tracked (${data.total_markets || 0})`;
-
-            // Update grouped markets list
-            const marketsDiv = document.getElementById('markets-grouped');
-            if (data.markets_by_league && data.markets_by_league.length > 0) {
-                marketsDiv.innerHTML = data.markets_by_league.map(league =>
-                    `<div style="background:#21262d;border-radius:8px;padding:12px;">
-                        <div style="font-weight:600;color:#f0f6fc;margin-bottom:8px;font-size:14px;">
-                            ${league.icon} ${league.league} (${league.markets.length})
-                        </div>
-                        <div style="color:#8b949e;font-size:12px;line-height:1.6;">
-                            ${league.markets.map(m => `• ${m}`).join('<br>')}
-                        </div>
-                    </div>`
-                ).join('');
-            } else {
-                marketsDiv.innerHTML = '<div style="color:#8b949e;padding:20px;text-align:center;">No markets tracked yet - trades will appear here</div>';
-            }
-        }
-
         function updateAiInsights(data) {
-            // Update summary stats
-            document.getElementById('ai-total-opps').textContent = data.summary.total_opportunities;
-            document.getElementById('ai-executed').textContent = data.summary.executed_trades;
-            document.getElementById('ai-missed').textContent = data.summary.missed_opportunities;
-            document.getElementById('ai-profit').textContent = formatCents(data.summary.total_profit_cents);
-            document.getElementById('ai-missed-profit').textContent = formatCents(data.summary.missed_profit_cents);
-            document.getElementById('ai-peak-hour').textContent = data.summary.peak_hour;
-
             // Update top recommendation
             const topRecSection = document.getElementById('ai-top-rec-section');
             const topRecDiv = document.getElementById('ai-top-recommendation');
@@ -1894,10 +1823,43 @@ const DASHBOARD_HTML: &str = r##"<!DOCTYPE html>
                 topRecSection.style.display = 'none';
             }
 
-            // Update AI insights list
+            // Update ML insights list with summary header
             const insightsList = document.getElementById('ai-insights-list');
+            const s = data.summary;
+
+            // Build summary header
+            let summaryHtml = `<div style="background:#0d1117;border-radius:8px;padding:16px;margin-bottom:8px;">
+                <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(120px, 1fr));gap:12px;text-align:center;">
+                    <div>
+                        <div style="font-size:24px;font-weight:700;color:#f0f6fc;">${s.total_opportunities}</div>
+                        <div style="font-size:11px;color:#8b949e;">Scanned</div>
+                    </div>
+                    <div>
+                        <div style="font-size:24px;font-weight:700;color:#3fb950;">${s.executed_trades}</div>
+                        <div style="font-size:11px;color:#8b949e;">Executed</div>
+                    </div>
+                    <div>
+                        <div style="font-size:24px;font-weight:700;color:#3fb950;">${formatCents(s.total_profit_cents)}</div>
+                        <div style="font-size:11px;color:#8b949e;">Profit</div>
+                    </div>
+                    <div>
+                        <div style="font-size:24px;font-weight:700;color:#d29922;">${s.missed_opportunities}</div>
+                        <div style="font-size:11px;color:#8b949e;">Missed</div>
+                    </div>
+                    <div>
+                        <div style="font-size:24px;font-weight:700;color:#d29922;">${formatCents(s.missed_profit_cents)}</div>
+                        <div style="font-size:11px;color:#8b949e;">Missed $</div>
+                    </div>
+                    <div>
+                        <div style="font-size:24px;font-weight:700;color:#58a6ff;">${s.peak_hour}</div>
+                        <div style="font-size:11px;color:#8b949e;">Peak Hour</div>
+                    </div>
+                </div>
+            </div>`;
+
+            // Build insights list
             if (data.insights && data.insights.length > 0) {
-                insightsList.innerHTML = data.insights.map(insight => {
+                const insightsHtml = data.insights.map(insight => {
                     const impactColor = insight.impact === 'high' ? '#f85149' : insight.impact === 'medium' ? '#d29922' : '#8b949e';
                     return `<div style="background:#21262d;border-radius:8px;padding:16px;border-left:3px solid ${impactColor};">
                         <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;">
@@ -1919,8 +1881,9 @@ const DASHBOARD_HTML: &str = r##"<!DOCTYPE html>
                         </div>` : ''}
                     </div>`;
                 }).join('');
+                insightsList.innerHTML = summaryHtml + insightsHtml;
             } else {
-                insightsList.innerHTML = '<div style="color:#8b949e;padding:20px;text-align:center;">Run the bot to collect data for AI insights</div>';
+                insightsList.innerHTML = summaryHtml + '<div style="color:#8b949e;padding:20px;text-align:center;">Collecting data for ML insights...</div>';
             }
 
             // Update performance table
