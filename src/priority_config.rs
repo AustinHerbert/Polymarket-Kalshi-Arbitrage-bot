@@ -43,6 +43,11 @@ pub struct PriorityConfig {
     /// Games starting more than this many hours away will be skipped
     /// Set to 0 to disable (trade all games regardless of start time)
     pub max_hours_until_game: u64,
+
+    /// Per-market cooldown in seconds (default: 300 = 5 minutes)
+    /// Prevents repeated trades on the same market within this window
+    /// Set to 0 to disable (allow unlimited trades per market)
+    pub market_cooldown_secs: u64,
 }
 
 impl Default for PriorityConfig {
@@ -57,6 +62,7 @@ impl Default for PriorityConfig {
             expiration_weight: 1.0,
             profit_weight: 2.0,
             max_hours_until_game: 24, // Only trade games within 24 hours
+            market_cooldown_secs: 0, // Disabled by default (set MARKET_COOLDOWN_SECS to enable)
         }
     }
 }
@@ -74,6 +80,7 @@ impl PriorityConfig {
             expiration_weight: parse_env_f64("EXPIRATION_WEIGHT", 1.0),
             profit_weight: parse_env_f64("PROFIT_WEIGHT", 2.0),
             max_hours_until_game: parse_env_u64("MAX_HOURS_UNTIL_GAME", 24),
+            market_cooldown_secs: parse_env_u64("MARKET_COOLDOWN_SECS", 300),
         }
     }
 

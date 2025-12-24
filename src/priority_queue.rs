@@ -8,7 +8,7 @@
 //! The queue re-sorts periodically (configurable) and applies liquidity constraints.
 
 use std::cmp::Ordering;
-use std::collections::BinaryHeap;
+use std::collections::{BinaryHeap, HashMap};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -291,6 +291,8 @@ pub struct SharedPriorityQueue {
     config: PriorityConfig,
     /// Atomic timestamp for lockless resort check
     last_resort_secs: AtomicU64,
+    /// Per-market cooldown tracking: market_id -> last_trade_timestamp
+    market_cooldowns: RwLock<HashMap<u16, u64>>,
 }
 
 impl SharedPriorityQueue {
@@ -301,19 +303,71 @@ impl SharedPriorityQueue {
             inner: RwLock::new(queue),
             config,
             last_resort_secs: AtomicU64::new(current_unix_secs()),
+            market_cooldowns: RwLock::new(HashMap::new()),
         }
     }
 
+    /// Check if a market is on cooldown
+    #[inline]
+    pub fn is_market_on_cooldown(&self, market_id: u16) -> bool {
+        if self.config.market_cooldown_secs == 0 {
+            return false; // Cooldowns disabled
+        }
+
+        let now = current_unix_secs();
+        let cooldowns = self.market_cooldowns.read();
+        if let Some(&last_trade) = cooldowns.get(&market_id) {
+            now - last_trade < self.config.market_cooldown_secs
+        } else {
+            false
+        }
+    }
+
+    /// Record a trade on a market (start cooldown)
+    pub fn record_trade(&self, market_id: u16) {
+        if self.config.market_cooldown_secs == 0 {
+            return; // Cooldowns disabled
+        }
+
+        let now = current_unix_secs();
+        self.market_cooldowns.write().insert(market_id, now);
+    }
+
+    /// Clean up expired cooldowns (call periodically)
+    pub fn cleanup_cooldowns(&self) {
+        if self.config.market_cooldown_secs == 0 {
+            return;
+        }
+
+        let now = current_unix_secs();
+        let mut cooldowns = self.market_cooldowns.write();
+        cooldowns.retain(|_, &mut last_trade| {
+            now - last_trade < self.config.market_cooldown_secs
+        });
+    }
+
     /// Push an opportunity to the queue (non-blocking with parking_lot)
+    /// Checks cooldown before adding
     #[inline]
     pub async fn push(&self, opp: PrioritizedOpportunity) {
+        // Check cooldown before adding
+        if self.is_market_on_cooldown(opp.request.market_id) {
+            debug!("Skipping market {} - on cooldown", opp.request.market_id);
+            return;
+        }
         // parking_lot locks are synchronous but fast - no need for async
         self.inner.write().push(opp);
     }
 
     /// Push an opportunity from an execution request
+    /// Checks cooldown before adding
     #[inline]
     pub async fn push_from_request(&self, request: FastExecutionRequest, pair: Arc<MarketPair>) {
+        // Check cooldown before creating opportunity
+        if self.is_market_on_cooldown(request.market_id) {
+            debug!("Skipping market {} - on cooldown", request.market_id);
+            return;
+        }
         let opp = PrioritizedOpportunity::new(request, pair, &self.config);
         self.push(opp).await;
     }

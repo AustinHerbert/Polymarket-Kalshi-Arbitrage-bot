@@ -331,8 +331,17 @@ fn get_settings_meta() -> Vec<SettingMeta> {
 
 /// GET /api/config
 async fn get_config(State(state): State<SharedWebState>) -> impl IntoResponse {
+    use crate::ml_optimizer::get_ml_optimizer;
+
     let cfg = state.config.read().await;
-    Json(cfg.clone())
+    let mut config = cfg.clone();
+
+    // Sync auto_optimize from ML optimizer (source of truth)
+    if let Some(optimizer) = get_ml_optimizer() {
+        config.auto_optimize = optimizer.is_auto_optimize_enabled();
+    }
+
+    Json(config)
 }
 
 /// GET /api/meta
@@ -515,9 +524,17 @@ async fn update_config(
     State(state): State<SharedWebState>,
     Json(new_config): Json<RuntimeConfig>,
 ) -> impl IntoResponse {
+    use crate::ml_optimizer::get_ml_optimizer;
+
     if let Err(e) = new_config.save_to_env(".env") {
         warn!("[WEB] Failed to save config: {}", e);
         return (StatusCode::INTERNAL_SERVER_ERROR, "Failed to save config");
+    }
+
+    // Sync auto_optimize to ML optimizer
+    if let Some(optimizer) = get_ml_optimizer() {
+        optimizer.set_auto_optimize(new_config.auto_optimize);
+        optimizer.save();
     }
 
     let mut cfg = state.config.write().await;
@@ -1647,23 +1664,6 @@ const DASHBOARD_HTML: &str = r##"<!DOCTYPE html>
                 </div>
             </div>
 
-            <!-- Auto-Optimize Status -->
-            <div class="section">
-                <div class="section-title">⚙️ Auto-Optimization Status</div>
-                <div id="auto-optimize-status" style="display: flex; align-items: center; gap: 16px; padding: 16px; background: #21262d; border-radius: 8px;">
-                    <div style="flex: 1;">
-                        <div style="font-weight: 600; color: #f0f6fc; margin-bottom: 4px;">
-                            AI Auto-Optimize: <span id="auto-opt-status" style="color: #f85149;">OFF</span>
-                        </div>
-                        <div style="font-size: 12px; color: #8b949e;">
-                            When enabled, AI automatically adjusts thresholds per sport/market to maximize daily profit.
-                            Only guardrail: trades must be profitable after fees.
-                        </div>
-                    </div>
-                    <button id="toggle-auto-opt" class="btn" onclick="toggleAutoOptimize()">Enable</button>
-                </div>
-            </div>
-
             <!-- Markets Tracked (moved to bottom) -->
             <div class="section">
                 <div class="section-title" id="markets-title">Markets Tracked (0)</div>
@@ -1870,23 +1870,6 @@ const DASHBOARD_HTML: &str = r##"<!DOCTYPE html>
             document.getElementById('ai-missed-profit').textContent = formatCents(data.summary.missed_profit_cents);
             document.getElementById('ai-peak-hour').textContent = data.summary.peak_hour;
 
-            // Update auto-optimize status
-            const statusSpan = document.getElementById('auto-opt-status');
-            const toggleBtn = document.getElementById('toggle-auto-opt');
-            if (data.auto_optimize_enabled) {
-                statusSpan.textContent = 'ON';
-                statusSpan.style.color = '#3fb950';
-                toggleBtn.textContent = 'Disable';
-                toggleBtn.classList.add('btn-danger');
-                toggleBtn.classList.remove('btn');
-            } else {
-                statusSpan.textContent = 'OFF';
-                statusSpan.style.color = '#f85149';
-                toggleBtn.textContent = 'Enable';
-                toggleBtn.classList.remove('btn-danger');
-                toggleBtn.classList.add('btn');
-            }
-
             // Update top recommendation
             const topRecSection = document.getElementById('ai-top-rec-section');
             const topRecDiv = document.getElementById('ai-top-recommendation');
@@ -1961,28 +1944,6 @@ const DASHBOARD_HTML: &str = r##"<!DOCTYPE html>
                 }).join('');
             } else {
                 perfBody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:#8b949e">Collecting data...</td></tr>';
-            }
-        }
-
-        async function toggleAutoOptimize() {
-            const statusSpan = document.getElementById('auto-opt-status');
-            const currentlyEnabled = statusSpan.textContent === 'ON';
-
-            try {
-                const res = await fetch('/api/ai-optimize', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ enabled: !currentlyEnabled })
-                });
-
-                if (res.ok) {
-                    showStatus(`Auto-optimize ${currentlyEnabled ? 'disabled' : 'enabled'}`, 'success');
-                    loadAll(); // Refresh all data
-                } else {
-                    showStatus('Failed to toggle auto-optimize', 'error');
-                }
-            } catch (e) {
-                showStatus('Error: ' + e.message, 'error');
             }
         }
 

@@ -12,8 +12,8 @@ use std::path::Path;
 
 use crate::ml_optimizer::{MarketCategory, OpportunityData};
 
-/// Maximum opportunities to keep in memory
-const MAX_OPPORTUNITIES: usize = 10000;
+/// Maximum opportunities to keep in memory (50K = ~2 weeks of data at high volume)
+const MAX_OPPORTUNITIES: usize = 50000;
 
 /// A scanned opportunity (may or may not have been executed)
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -57,7 +57,16 @@ impl MarketCategory {
             "MLB"
         } else if name_lower.contains("nhl") || name_lower.contains("hockey")
             || name_lower.contains("bruins") || name_lower.contains("rangers")
-            || name_lower.contains("oilers") || name_lower.contains("panthers") {
+            || name_lower.contains("oilers") || name_lower.contains("panthers")
+            || name_lower.contains("predators") || name_lower.contains("nashville")
+            || name_lower.contains("wild") || name_lower.contains("minnesota")
+            || name_lower.contains("maple leafs") || name_lower.contains("canadiens")
+            || name_lower.contains("penguins") || name_lower.contains("capitals")
+            || name_lower.contains("lightning") || name_lower.contains("avalanche")
+            || name_lower.contains("devils") || name_lower.contains("flyers")
+            || name_lower.contains("blackhawks") || name_lower.contains("red wings")
+            || name_lower.contains("stars") || name_lower.contains("flames")
+            || name_lower.contains("jets") || name_lower.contains("canucks") {
             "NHL"
         } else if name_lower.contains("btc") || name_lower.contains("bitcoin")
             || name_lower.contains("eth") || name_lower.contains("ethereum")
