@@ -1426,6 +1426,13 @@ const DASHBOARD_HTML: &str = r##"<!DOCTYPE html>
             return '$' + (cents / 100).toFixed(2);
         }
 
+        function formatCompact(cents) {
+            const dollars = cents / 100;
+            if (dollars >= 1000000) return '$' + (dollars / 1000000).toFixed(1) + 'M';
+            if (dollars >= 1000) return '$' + (dollars / 1000).toFixed(1) + 'K';
+            return '$' + dollars.toFixed(0);
+        }
+
         async function loadAll() {
             document.getElementById('loader').style.display = 'block';
             document.getElementById('content').style.display = 'none';
@@ -1537,10 +1544,10 @@ const DASHBOARD_HTML: &str = r##"<!DOCTYPE html>
             const projVolume = (a.total_volume_cents / Math.max(a.total_trades, 1)) * projTrades;
             const projRoi = a.bankroll_cents > 0 ? (projProfit / a.bankroll_cents) * 100 : 0;
 
-            document.getElementById('proj-profit').textContent = formatCents(projProfit);
+            document.getElementById('proj-profit').textContent = formatCompact(projProfit);
             document.getElementById('proj-trades').textContent = projTrades.toLocaleString();
-            document.getElementById('proj-volume').textContent = formatCents(projVolume);
-            document.getElementById('proj-roi').textContent = projRoi.toFixed(1) + '%';
+            document.getElementById('proj-volume').textContent = formatCompact(projVolume);
+            document.getElementById('proj-roi').textContent = projRoi.toFixed(0) + '%';
         }
 
         function updateTrades(trades) {
