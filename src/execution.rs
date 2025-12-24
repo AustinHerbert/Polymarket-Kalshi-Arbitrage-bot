@@ -326,6 +326,33 @@ impl ExecutionEngine {
                 let success = matched > 0;
                 let actual_profit = matched as i16 * 100 - (yes_cost + no_cost) as i16;
 
+                // === Update local orderbook to prevent re-detecting same opportunity ===
+                // Subtract consumed liquidity from local orderbook cache
+                if matched > 0 {
+                    if let Some(market) = self.state.get_by_id(market_id) {
+                        match req.arb_type {
+                            ArbType::PolyYesKalshiNo => {
+                                // Consumed poly YES and kalshi NO
+                                market.poly.consume_liquidity(matched as u16, 0);
+                                market.kalshi.consume_liquidity(0, matched as u16);
+                            }
+                            ArbType::KalshiYesPolyNo => {
+                                // Consumed kalshi YES and poly NO
+                                market.kalshi.consume_liquidity(matched as u16, 0);
+                                market.poly.consume_liquidity(0, matched as u16);
+                            }
+                            ArbType::PolyOnly => {
+                                // Consumed poly YES and poly NO
+                                market.poly.consume_liquidity(matched as u16, matched as u16);
+                            }
+                            ArbType::KalshiOnly => {
+                                // Consumed kalshi YES and kalshi NO
+                                market.kalshi.consume_liquidity(matched as u16, matched as u16);
+                            }
+                        }
+                    }
+                }
+
                 // === Automatic exposure management for mismatched fills ===
                 // If one leg fills more than the other, automatically close the excess
                 // to maintain market-neutral exposure (non-blocking background task)

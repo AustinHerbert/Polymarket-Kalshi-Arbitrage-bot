@@ -186,6 +186,24 @@ impl AtomicOrderbook {
             }
         }
     }
+
+    /// Consume liquidity after execution - subtracts filled contracts from sizes
+    /// Returns the remaining sizes (yes_size, no_size)
+    #[inline(always)]
+    pub fn consume_liquidity(&self, yes_contracts: u16, no_contracts: u16) -> (SizeCents, SizeCents) {
+        let mut current = self.packed.load(Ordering::Acquire);
+        loop {
+            let (yes_ask, no_ask, yes_size, no_size) = unpack_orderbook(current);
+            // Subtract consumed contracts (in cents: 1 contract = 100 cents)
+            let new_yes_size = yes_size.saturating_sub(yes_contracts * 100);
+            let new_no_size = no_size.saturating_sub(no_contracts * 100);
+            let new = pack_orderbook(yes_ask, no_ask, new_yes_size, new_no_size);
+            match self.packed.compare_exchange_weak(current, new, Ordering::AcqRel, Ordering::Acquire) {
+                Ok(_) => return (new_yes_size, new_no_size),
+                Err(c) => current = c,
+            }
+        }
+    }
 }
 
 impl Default for AtomicOrderbook {
