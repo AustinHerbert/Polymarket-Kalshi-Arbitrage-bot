@@ -148,10 +148,9 @@ impl ExecutionEngine {
         }
 
         // Calculate max contracts from size (min of both sides)
-        // Use 85% of visible liquidity to reduce partial fills and slippage
-        let available_size = req.yes_size.min(req.no_size);
-        let safe_size = ((available_size as f64) * 0.85) as u16;
-        let mut max_contracts = (safe_size / 100) as i64;
+        // Use 100% - IOC orders fill at ask or cancel instantly
+        // Partial fill handling already covers stale order book scenarios
+        let mut max_contracts = (req.yes_size.min(req.no_size) / 100) as i64;
 
         // Apply liquidity constraints if priority mode is enabled
         if let Some(ref config) = self.priority_config {
