@@ -535,6 +535,12 @@ async fn main() -> Result<()> {
                         .map(|p| p.description.to_string())
                         .unwrap_or_else(|| format!("Market_{}", market.market_id));
 
+                    // Get real league and market_type from MarketPair (needed for ML)
+                    let (league, market_type_str) = heartbeat_state.get_by_id(market.market_id)
+                        .and_then(|m| m.pair.as_ref())
+                        .map(|p| (p.league.to_string(), format!("{:?}", p.market_type)))
+                        .unwrap_or_else(|| ("unknown".to_string(), "unknown".to_string()));
+
                     // Get per-market threshold if ML optimizer is enabled
                     let effective_threshold = if ml_auto {
                         get_ml_optimizer()
@@ -544,29 +550,36 @@ async fn main() -> Result<()> {
                         heartbeat_threshold
                     };
 
-                    // Log near-misses (within 5¢ of threshold) to opportunity logger
+                    // Calculate liquidity for all markets
+                    let yes_liq = (p_yes_size + k_yes_size) as u16;
+                    let no_liq = (p_no_size + k_no_size) as u16;
+                    let min_liq = yes_liq.min(no_liq);
+
                     let gap = best_cost as i16 - effective_threshold as i16;
+                    let was_executed = gap < 0; // Below threshold = would execute
+                    let profit_cents = if was_executed { (100 - best_cost) as i16 } else { 0 };
+
+                    // Record ALL market observations to ML optimizer (not just near-misses)
+                    if let Some(optimizer) = get_ml_optimizer() {
+                        optimizer.record_observation_with_league(
+                            &league,
+                            &market_type_str,
+                            best_cost,
+                            min_liq as u32 * 100, // Convert to cents
+                            was_executed,
+                            profit_cents,
+                        );
+                    }
+
+                    // Log near-misses (within 5¢ of threshold) to opportunity logger only
                     if gap <= 5 && gap > -10 {
                         near_misses += 1;
 
-                        // Calculate liquidity
-                        let yes_liq = (p_yes_size + k_yes_size) as u16;
-                        let no_liq = (p_no_size + k_no_size) as u16;
-                        let min_liq = yes_liq.min(no_liq);
-
-                        let was_executed = gap < 0; // Below threshold = would execute
-                        let profit_cents = if was_executed { (100 - best_cost) as i16 } else { 0 };
                         let rejection = if gap >= 0 {
                             Some(format!("Gap {}¢ above threshold", gap))
                         } else {
                             None
                         };
-
-                        // Get real league and market_type from MarketPair
-                        let (league, market_type_str) = heartbeat_state.get_by_id(market.market_id)
-                            .and_then(|m| m.pair.as_ref())
-                            .map(|p| (p.league.to_string(), format!("{:?}", p.market_type)))
-                            .unwrap_or_else(|| ("unknown".to_string(), "unknown".to_string()));
 
                         if let Some(logger) = get_opportunity_logger() {
                             let opp = create_opportunity(
@@ -584,18 +597,6 @@ async fn main() -> Result<()> {
                                 rejection.as_deref(),
                             );
                             logger.log_opportunity(opp);
-                        }
-
-                        // Record observation to ML optimizer with real league data
-                        if let Some(optimizer) = get_ml_optimizer() {
-                            optimizer.record_observation_with_league(
-                                &league,
-                                &market_type_str,
-                                best_cost,
-                                min_liq as u32 * 100, // Convert to cents
-                                was_executed,
-                                profit_cents,
-                            );
                         }
                     }
 
