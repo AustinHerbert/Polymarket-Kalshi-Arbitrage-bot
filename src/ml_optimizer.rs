@@ -173,11 +173,35 @@ pub struct MlOptimizer {
 }
 
 impl MlOptimizer {
+    /// All supported market categories for pre-initialization
+    const ALL_CATEGORIES: &'static [(&'static str, &'static [&'static str])] = &[
+        // European Soccer (full market types)
+        ("EPL", &["Moneyline", "Spread", "Total", "BTTS"]),
+        ("Bundesliga", &["Moneyline", "Spread", "Total", "BTTS"]),
+        ("LaLiga", &["Moneyline", "Spread", "Total", "BTTS"]),
+        ("SerieA", &["Moneyline", "Spread", "Total", "BTTS"]),
+        ("Ligue1", &["Moneyline", "Spread", "Total", "BTTS"]),
+        ("UCL", &["Moneyline", "Spread", "Total", "BTTS"]),
+        // Secondary European (moneyline only)
+        ("UEL", &["Moneyline"]),
+        ("EFL", &["Moneyline"]),
+        // US Sports
+        ("NBA", &["Moneyline", "Spread", "Total"]),
+        ("WNBA", &["Moneyline"]),
+        ("NFL", &["Moneyline", "Spread", "Total"]),
+        ("NHL", &["Moneyline", "Spread", "Total"]),
+        ("MLB", &["Moneyline", "Spread", "Total"]),
+        ("MLS", &["Moneyline"]),
+        ("NCAAF", &["Moneyline", "Spread", "Total"]),
+        ("NCAAMB", &["Moneyline", "Spread", "Total"]),
+        ("NCAAWB", &["Moneyline", "Spread", "Total"]),
+    ];
+
     pub fn new(persist_path: &str) -> Self {
         let full_path = format!("{}/ml_settings.json", persist_path);
 
         // Load existing settings or start fresh
-        let (category_settings, global_settings) = if let Ok(content) = fs::read_to_string(&full_path) {
+        let (mut category_settings, global_settings) = if let Ok(content) = fs::read_to_string(&full_path) {
             if let Ok(data) = serde_json::from_str::<serde_json::Value>(&content) {
                 let cats: HashMap<String, CategorySettings> = data.get("categories")
                     .and_then(|v| serde_json::from_value(v.clone()).ok())
@@ -192,6 +216,25 @@ impl MlOptimizer {
         } else {
             (HashMap::new(), CategorySettings::default())
         };
+
+        // Pre-initialize all 46 market categories if they don't exist
+        let mut initialized_count = 0;
+        for (league, market_types) in Self::ALL_CATEGORIES {
+            for market_type in *market_types {
+                let key = format!("{}_{}", league, market_type);
+                if !category_settings.contains_key(&key) {
+                    category_settings.insert(key, CategorySettings::default());
+                    initialized_count += 1;
+                }
+            }
+        }
+
+        if initialized_count > 0 {
+            info!("[ML] Pre-initialized {} market categories for training", initialized_count);
+        }
+
+        let total_categories = category_settings.len();
+        info!("[ML] Loaded {} total market categories", total_categories);
 
         Self {
             category_settings: RwLock::new(category_settings),
@@ -262,30 +305,36 @@ impl MlOptimizer {
         was_executed: bool,
         profit_cents: i16,
     ) {
-        // Normalize league name
+        // Normalize league name to match ALL_CATEGORIES
         let normalized_league = match league.to_lowercase().as_str() {
+            // European Soccer
+            "epl" | "premier_league" | "premier-league" => "EPL",
+            "bundesliga" | "bun" => "Bundesliga",
+            "la_liga" | "laliga" | "la-liga" | "lal" => "LaLiga",
+            "serie_a" | "seriea" | "serie-a" | "sea" => "SerieA",
+            "ligue_1" | "ligue1" | "ligue-1" | "fl1" => "Ligue1",
+            "champions_league" | "ucl" => "UCL",
+            "europa_league" | "uel" => "UEL",
+            "efl_championship" | "eflc" | "elc" | "efl" => "EFL",
+            // US Sports
             "nfl" => "NFL",
             "nba" => "NBA",
-            "mlb" => "MLB",
+            "wnba" => "WNBA",
             "nhl" => "NHL",
-            "epl" | "premier_league" | "premier-league" => "EPL",
-            "la_liga" | "laliga" | "la-liga" => "LaLiga",
-            "serie_a" | "seriea" | "serie-a" => "SerieA",
-            "bundesliga" => "Bundesliga",
-            "ligue_1" | "ligue1" | "ligue-1" => "Ligue1",
-            "champions_league" | "ucl" => "UCL",
-            "ncaaf" | "college_football" => "NCAAF",
-            "ncaab" | "college_basketball" => "NCAAB",
-            "crypto" | "btc" | "eth" => "Crypto",
+            "mlb" => "MLB",
+            "mls" => "MLS",
+            "ncaaf" | "cfb" | "college_football" => "NCAAF",
+            "ncaamb" | "cbb" | "ncaab" | "college_basketball" => "NCAAMB",
+            "ncaawb" | "wcbb" | "womens_college_basketball" => "NCAAWB",
             _ => league,
         };
 
-        // Normalize market type
+        // Normalize market type to match ALL_CATEGORIES
         let normalized_type = match market_type.to_lowercase().as_str() {
-            "moneyline" | "winner" => "Moneyline",
+            "moneyline" | "winner" | "game" => "Moneyline",
             "spread" | "handicap" => "Spread",
-            "total" | "overunder" => "Total",
-            "prop" => "Prop",
+            "total" | "overunder" | "over_under" => "Total",
+            "btts" | "both_teams_to_score" => "BTTS",
             _ => market_type,
         };
 
