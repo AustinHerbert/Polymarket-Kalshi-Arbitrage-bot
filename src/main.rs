@@ -31,6 +31,7 @@ mod discovery;
 mod execution;
 mod kalshi;
 mod metrics;
+mod opportunity_log;
 mod polymarket;
 mod polymarket_clob;
 mod position_tracker;
@@ -119,7 +120,9 @@ async fn main() -> Result<()> {
         .and_then(|v| v.parse::<u64>().ok())
         .unwrap_or(10000) * 100; // Default $100, convert to cents
     trade_log::init_trade_logger("./dashboard_data", dry_run, bankroll_cents);
+    opportunity_log::init_opportunity_logger("./dashboard_data");
     info!("   Dashboard: ENABLED (data in ./dashboard_data/)");
+    info!("   Opportunity Scanner: ENABLED (logging near-misses for optimization)");
     info!("   Bankroll: ${:.2}", bankroll_cents as f64 / 100.0);
 
     // Load Kalshi credentials
@@ -470,11 +473,12 @@ async fn main() -> Result<()> {
         }
     });
 
-    // System health monitoring and arbitrage diagnostics
+    // System health monitoring and arbitrage diagnostics with opportunity logging
     let heartbeat_state = state.clone();
     let heartbeat_threshold = threshold_cents;
     let heartbeat_handle = tokio::spawn(async move {
         use crate::types::kalshi_fee_cents;
+        use crate::opportunity_log::{get_opportunity_logger, create_opportunity};
         let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(60));
         loop {
             interval.tick().await;
@@ -482,12 +486,13 @@ async fn main() -> Result<()> {
             let mut with_kalshi = 0;
             let mut with_poly = 0;
             let mut with_both = 0;
+            let mut near_misses = 0;
             // Track best arbitrage opportunity: (total_cost, market_id, p_yes, k_no, k_yes, p_no, fee, is_poly_yes_kalshi_no)
             let mut best_arb: Option<(u16, u16, u16, u16, u16, u16, u16, bool)> = None;
 
             for market in heartbeat_state.markets.iter().take(market_count) {
-                let (k_yes, k_no, _, _) = market.kalshi.load();
-                let (p_yes, p_no, _, _) = market.poly.load();
+                let (k_yes, k_no, k_yes_size, k_no_size) = market.kalshi.load();
+                let (p_yes, p_no, p_yes_size, p_no_size) = market.poly.load();
                 let has_k = k_yes > 0 && k_no > 0;
                 let has_p = p_yes > 0 && p_no > 0;
                 if k_yes > 0 || k_no > 0 { with_kalshi += 1; }
@@ -507,9 +512,54 @@ async fn main() -> Result<()> {
                         (cost2, fee2, false)
                     };
 
+                    // Log near-misses (within 5¢ of threshold) to opportunity logger
+                    let gap = best_cost as i16 - heartbeat_threshold as i16;
+                    if gap <= 5 && gap > -10 {
+                        near_misses += 1;
+                        let desc = heartbeat_state.get_by_id(market.market_id)
+                            .and_then(|m| m.pair.as_ref())
+                            .map(|p| p.description.to_string())
+                            .unwrap_or_else(|| format!("Market_{}", market.market_id));
+
+                        // Calculate liquidity
+                        let yes_liq = (p_yes_size + k_yes_size) as u16;
+                        let no_liq = (p_no_size + k_no_size) as u16;
+
+                        let was_executed = gap < 0; // Below threshold = would execute
+                        let rejection = if gap >= 0 {
+                            Some(format!("Gap {}¢ above threshold", gap))
+                        } else {
+                            None
+                        };
+
+                        if let Some(logger) = get_opportunity_logger() {
+                            let opp = create_opportunity(
+                                market.market_id,
+                                &desc,
+                                k_yes,
+                                k_no,
+                                p_yes,
+                                p_no,
+                                yes_liq,
+                                no_liq,
+                                was_executed,
+                                rejection.as_deref(),
+                            );
+                            logger.log_opportunity(opp);
+                        }
+                    }
+
                     if best_arb.is_none() || best_cost < best_arb.as_ref().unwrap().0 {
                         best_arb = Some((best_cost, market.market_id, p_yes, k_no, k_yes, p_no, best_fee, is_poly_yes));
                     }
+                }
+            }
+
+            // Log opportunity count for optimization
+            if let Some(logger) = get_opportunity_logger() {
+                let count = logger.count();
+                if near_misses > 0 {
+                    info!("   📈 Logged {} near-misses ({} total opportunities recorded)", near_misses, count);
                 }
             }
 

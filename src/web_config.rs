@@ -527,21 +527,10 @@ async fn trigger_restart() -> impl IntoResponse {
     (StatusCode::OK, "Bot shutting down in 2 seconds. Use run_bot.sh for auto-restart.")
 }
 
-/// Threshold comparison for opportunity analysis
-#[derive(Debug, Clone, Serialize)]
-struct ThresholdComparison {
-    /// Description of the scenario
-    description: String,
-    /// What's different from current settings
-    changes: String,
-    /// Number of opportunities that would be found
-    opportunities: u32,
-    /// Example markets (if any)
-    examples: Vec<String>,
-}
-
-/// GET /api/simulation - Compare different threshold settings
+/// GET /api/simulation - Compare different threshold settings using real logged data
 async fn get_simulation() -> impl IntoResponse {
+    use crate::opportunity_log::{get_opportunity_logger, ThresholdSimulation};
+
     // Read current config from env
     let current_threshold = std::env::var("ARB_THRESHOLD_CENTS")
         .ok()
@@ -556,72 +545,64 @@ async fn get_simulation() -> impl IntoResponse {
         .and_then(|v| v.parse::<f64>().ok())
         .unwrap_or(1.0);
 
-    let comparisons = vec![
-        ThresholdComparison {
-            description: "Current Settings".to_string(),
-            changes: format!(
-                "Threshold: {}¢, Min Liquidity: ${}, Min Profit: {:.1}%",
-                current_threshold, min_liquidity / 100, min_arb_percent
-            ),
-            opportunities: 0,
-            examples: vec![],
-        },
-        ThresholdComparison {
-            description: "Without Kalshi Fees".to_string(),
-            changes: "Ignoring 1-2¢ Kalshi fee per contract".to_string(),
-            opportunities: 0,
-            examples: vec!["Trades at 99¢ total become profitable".to_string()],
-        },
-        ThresholdComparison {
-            description: "Lower Threshold (98¢)".to_string(),
-            changes: "Accept trades with only 2% profit".to_string(),
-            opportunities: 0,
-            examples: vec!["More volume, less profit per trade".to_string()],
-        },
-        ThresholdComparison {
-            description: "No Liquidity Filter".to_string(),
-            changes: "Accept any liquidity (even $1)".to_string(),
-            opportunities: 0,
-            examples: vec!["Small but profitable opportunities".to_string()],
-        },
-        ThresholdComparison {
-            description: "Aggressive Mode".to_string(),
-            changes: "No filters: any profit, any liquidity".to_string(),
-            opportunities: 0,
-            examples: vec!["Maximum opportunities (higher risk)".to_string()],
-        },
-    ];
-
-    // Note: In a real implementation, we'd scan the actual market state
-    // For now, provide educational comparison based on typical markets
-
     #[derive(serde::Serialize)]
     struct SimulationResponse {
         generated_at: String,
         current_settings: String,
-        comparisons: Vec<ThresholdComparison>,
-        recommendation: String,
+        total_opportunities_scanned: u32,
+        analysis_hours: f64,
+        simulations: Vec<ThresholdSimulation>,
+        recommended_threshold: u16,
+        reasoning: String,
+        current_profit_cents: i64,
+        optimal_profit_cents: i64,
+        improvement_percent: f64,
+        has_data: bool,
     }
 
-    let recommendation = if min_arb_percent >= 1.0 {
-        "Try setting MIN_ARB_PERCENT=0.5 to find more opportunities while still maintaining profit margin."
-    } else if min_liquidity >= 25000 {
-        "Try MIN_LIQUIDITY_CENTS=5000 ($50) to catch smaller but valid opportunities."
+    // Try to get real simulation data from the opportunity logger
+    if let Some(logger) = get_opportunity_logger() {
+        let analysis = logger.run_simulation(min_liquidity);
+
+        let response = SimulationResponse {
+            generated_at: analysis.generated_at,
+            current_settings: format!(
+                "Threshold: {}¢ | Min Liquidity: ${} | Min Profit: {:.1}%",
+                current_threshold, min_liquidity / 100, min_arb_percent
+            ),
+            total_opportunities_scanned: analysis.total_opportunities_scanned,
+            analysis_hours: analysis.analysis_period_hours,
+            simulations: analysis.simulations,
+            recommended_threshold: analysis.recommended_threshold_cents,
+            reasoning: analysis.reasoning,
+            current_profit_cents: analysis.current_profit_cents,
+            optimal_profit_cents: analysis.optimal_profit_cents,
+            improvement_percent: analysis.improvement_percent,
+            has_data: analysis.total_opportunities_scanned > 0,
+        };
+
+        Json(response)
     } else {
-        "Settings look aggressive. Consider if Kalshi fee accounting differs from original bot."
-    };
+        // No logger available - return empty response
+        let response = SimulationResponse {
+            generated_at: chrono::Utc::now().format("%Y-%m-%d %H:%M:%S UTC").to_string(),
+            current_settings: format!(
+                "Threshold: {}¢ | Min Liquidity: ${} | Min Profit: {:.1}%",
+                current_threshold, min_liquidity / 100, min_arb_percent
+            ),
+            total_opportunities_scanned: 0,
+            analysis_hours: 0.0,
+            simulations: vec![],
+            recommended_threshold: current_threshold,
+            reasoning: "Opportunity logger not initialized. Run bot to collect data.".to_string(),
+            current_profit_cents: 0,
+            optimal_profit_cents: 0,
+            improvement_percent: 0.0,
+            has_data: false,
+        };
 
-    let response = SimulationResponse {
-        generated_at: chrono::Utc::now().format("%Y-%m-%d %H:%M:%S UTC").to_string(),
-        current_settings: format!(
-            "Threshold: {}¢ | Min Liquidity: ${} | Min Profit: {:.1}%",
-            current_threshold, min_liquidity / 100, min_arb_percent
-        ),
-        comparisons,
-        recommendation: recommendation.to_string(),
-    };
-
-    Json(response)
+        Json(response)
+    }
 }
 
 /// GET /api/insights - Market insights and tracked markets
@@ -1627,33 +1608,63 @@ const DASHBOARD_HTML: &str = r##"<!DOCTYPE html>
             const contentDiv = document.getElementById('simulation-content');
             const recDiv = document.getElementById('simulation-recommendation');
 
-            // Show current settings
+            // Show current settings and data status
             let html = `<div style="background:#0d1117;padding:12px 16px;border-radius:8px;border:1px solid #30363d;">
                 <div style="font-size:12px;color:#8b949e;margin-bottom:4px;">Current Settings</div>
                 <div style="font-size:14px;color:#f0f6fc;">${data.current_settings}</div>
+                <div style="font-size:11px;color:#8b949e;margin-top:8px;">
+                    ${data.has_data
+                        ? `📊 Analyzed ${data.total_opportunities_scanned} opportunities over ${data.analysis_hours.toFixed(1)} hours`
+                        : '⏳ Collecting data... Run bot to gather opportunities'}
+                </div>
             </div>`;
 
-            // Show comparison table
-            html += `<div style="background:#21262d;border-radius:8px;overflow:hidden;">
-                <table style="width:100%;border-collapse:collapse;font-size:13px;">
-                    <thead>
-                        <tr style="background:#161b22;">
-                            <th style="text-align:left;padding:12px;color:#8b949e;font-weight:500;">Scenario</th>
-                            <th style="text-align:left;padding:12px;color:#8b949e;font-weight:500;">What Changes</th>
-                        </tr>
-                    </thead>
-                    <tbody>`;
+            // Show simulation results if we have data
+            if (data.has_data && data.simulations && data.simulations.length > 0) {
+                html += `<div style="background:#21262d;border-radius:8px;overflow:hidden;">
+                    <table style="width:100%;border-collapse:collapse;font-size:13px;">
+                        <thead>
+                            <tr style="background:#161b22;">
+                                <th style="text-align:left;padding:12px;color:#8b949e;font-weight:500;">Threshold</th>
+                                <th style="text-align:right;padding:12px;color:#8b949e;font-weight:500;">Trades</th>
+                                <th style="text-align:right;padding:12px;color:#8b949e;font-weight:500;">Total Profit</th>
+                                <th style="text-align:right;padding:12px;color:#8b949e;font-weight:500;">Avg/Trade</th>
+                            </tr>
+                        </thead>
+                        <tbody>`;
 
-            data.comparisons.forEach((c, i) => {
-                const rowBg = i === 0 ? 'background:#238636;' : '';
-                const textColor = i === 0 ? 'color:white;' : 'color:#c9d1d9;';
-                html += `<tr style="${rowBg}">
-                    <td style="padding:10px 12px;${textColor}font-weight:${i === 0 ? '600' : '400'};">${c.description}</td>
-                    <td style="padding:10px 12px;${textColor}font-size:12px;">${c.changes}</td>
-                </tr>`;
-            });
+                // Find best performing threshold
+                const bestIdx = data.simulations.reduce((best, s, i, arr) =>
+                    s.total_profit_cents > arr[best].total_profit_cents ? i : best, 0);
 
-            html += `</tbody></table></div>`;
+                data.simulations.forEach((s, i) => {
+                    const isBest = i === bestIdx && s.total_profit_cents > 0;
+                    const rowBg = isBest ? 'background:#238636;' : '';
+                    const textColor = isBest ? 'color:white;' : 'color:#c9d1d9;';
+                    html += `<tr style="${rowBg}">
+                        <td style="padding:10px 12px;${textColor}font-weight:${isBest ? '600' : '400'};">
+                            ${s.threshold_name}${isBest ? ' ⭐' : ''}
+                        </td>
+                        <td style="padding:10px 12px;${textColor}text-align:right;">${s.opportunities_found}</td>
+                        <td style="padding:10px 12px;${textColor}text-align:right;">${formatCents(s.total_profit_cents)}</td>
+                        <td style="padding:10px 12px;${textColor}text-align:right;">${formatCents(s.avg_profit_cents)}</td>
+                    </tr>`;
+                });
+
+                html += `</tbody></table></div>`;
+
+                // Show improvement potential
+                if (data.improvement_percent > 0) {
+                    html += `<div style="background:#238636;border-radius:8px;padding:16px;color:white;">
+                        <div style="font-weight:600;font-size:16px;margin-bottom:8px;">
+                            📈 Potential Improvement: +${data.improvement_percent.toFixed(1)}%
+                        </div>
+                        <div style="font-size:13px;">
+                            Current: ${formatCents(data.current_profit_cents)} → Optimal: ${formatCents(data.optimal_profit_cents)}
+                        </div>
+                    </div>`;
+                }
+            }
 
             // Key differences explanation
             html += `<div style="background:#21262d;border-radius:8px;padding:16px;">
@@ -1677,8 +1688,8 @@ const DASHBOARD_HTML: &str = r##"<!DOCTYPE html>
             contentDiv.innerHTML = html;
 
             // Show recommendation
-            if (data.recommendation) {
-                recDiv.innerHTML = `<div style="font-size:13px;"><strong style="color:#58a6ff;">💡 Suggestion:</strong> <span style="color:#c9d1d9;">${data.recommendation}</span></div>`;
+            if (data.reasoning) {
+                recDiv.innerHTML = `<div style="font-size:13px;"><strong style="color:#58a6ff;">💡 Recommendation:</strong> <span style="color:#c9d1d9;">${data.reasoning}</span></div>`;
                 recDiv.style.display = 'block';
             } else {
                 recDiv.style.display = 'none';
