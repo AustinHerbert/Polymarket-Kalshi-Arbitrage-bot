@@ -10,7 +10,7 @@ use std::fs::{self, OpenOptions};
 use std::io::{BufWriter, Write};
 use std::path::Path;
 
-use crate::ml_optimizer::{MarketCategory, OpportunityData};
+use crate::ml_optimizer::OpportunityData;
 
 /// Maximum opportunities to keep in memory (50K = ~2 weeks of data at high volume)
 const MAX_OPPORTUNITIES: usize = 50000;
@@ -282,6 +282,8 @@ impl OpportunityLogger {
         opps.iter().map(|opp| OpportunityData {
             timestamp: opp.timestamp.clone(),
             market_name: opp.market_name.clone(),
+            sport: opp.sport.clone(),
+            bet_type: opp.bet_type.clone(),
             adjusted_cost_cents: opp.adjusted_total_cents,
             liquidity_cents: opp.min_liquidity_cents as u32,
             was_executed: opp.was_executed,

@@ -414,11 +414,12 @@ impl MlOptimizer {
             return insights;
         }
 
-        // Group opportunities by category
+        // Group opportunities by category using real sport/bet_type from OpportunityData
         let mut by_category: HashMap<String, Vec<&OpportunityData>> = HashMap::new();
         for opp in opportunities {
-            let category = MarketCategory::from_market_name(&opp.market_name);
-            by_category.entry(category.key()).or_default().push(opp);
+            // Use real sport/bet_type fields instead of parsing market name
+            let key = format!("{}_{}", opp.sport, opp.bet_type);
+            by_category.entry(key).or_default().push(opp);
         }
 
         // Analyze each category
@@ -452,11 +453,12 @@ impl MlOptimizer {
         let bet_type = parts.get(1).unwrap_or(&"Unknown");
 
         let icon = match *sport {
-            "NFL" => "🏈",
-            "NBA" => "🏀",
+            "NFL" | "NCAAF" => "🏈",
+            "NBA" | "WNBA" | "NCAAMB" | "NCAAWB" => "🏀",
             "MLB" => "⚾",
             "NHL" => "🏒",
-            "Crypto" => "₿",
+            "EPL" | "Bundesliga" | "LaLiga" | "SerieA" | "Ligue1" | "UCL" | "UEL" | "EFL" | "MLS" => "⚽",
+            "BTC" | "ETH" | "SOL" | "XRP" | "DOGE" | "Crypto" => "₿",
             _ => "📊",
         };
 
@@ -637,11 +639,12 @@ impl MlOptimizer {
         let mut results = Vec::new();
         let cats = self.category_settings.read();
 
-        // Group opportunities by category
+        // Group opportunities by category using real sport/bet_type from OpportunityData
         let mut by_category: HashMap<String, Vec<&OpportunityData>> = HashMap::new();
         for opp in opportunities {
-            let category = MarketCategory::from_market_name(&opp.market_name);
-            by_category.entry(category.key()).or_default().push(opp);
+            // Use real sport/bet_type fields instead of parsing market name
+            let key = format!("{}_{}", opp.sport, opp.bet_type);
+            by_category.entry(key).or_default().push(opp);
         }
 
         for (key, opps) in &by_category {
@@ -679,7 +682,11 @@ impl MlOptimizer {
                 .map(|o| (100 - o.adjusted_cost_cents as i16) as i64)
                 .sum();
 
-            let category = MarketCategory::from_market_name(&opps[0].market_name);
+            // Use real sport/bet_type from OpportunityData instead of parsing market name
+            let category = MarketCategory {
+                sport: opps[0].sport.clone(),
+                bet_type: opps[0].bet_type.clone(),
+            };
 
             results.push(CategoryPerformance {
                 category,
@@ -721,6 +728,10 @@ impl MlOptimizer {
 pub struct OpportunityData {
     pub timestamp: String,
     pub market_name: String,
+    /// Real sport/league from API (e.g., "EPL", "NFL", "BTC")
+    pub sport: String,
+    /// Real bet type from API (e.g., "Moneyline", "Spread", "Total")
+    pub bet_type: String,
     pub adjusted_cost_cents: u16,
     pub liquidity_cents: u32,
     pub was_executed: bool,
