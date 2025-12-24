@@ -2830,6 +2830,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "simd-json",
+ "socket2 0.5.10",
  "tiny-keccak",
  "tokio",
  "tokio-tungstenite 0.21.0",
