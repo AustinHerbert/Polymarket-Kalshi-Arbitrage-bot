@@ -10,6 +10,7 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
+use chrono::Timelike;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -526,6 +527,112 @@ async fn trigger_restart() -> impl IntoResponse {
     (StatusCode::OK, "Bot shutting down in 2 seconds. Use run_bot.sh for auto-restart.")
 }
 
+/// GET /api/insights - Market insights and near-misses
+async fn get_insights() -> impl IntoResponse {
+    #[derive(serde::Serialize)]
+    struct NearMiss {
+        market: String,
+        league: String,
+        total_cost_cents: u16,
+        gap_cents: i16,
+        gap_percent: f64,
+        yes_price: u16,
+        no_price: u16,
+        liquidity: f64,
+        arb_type: String,
+    }
+
+    #[derive(serde::Serialize)]
+    struct InsightsResponse {
+        generated_at: String,
+        near_misses: Vec<NearMiss>,
+        insights: Vec<String>,
+        best_leagues: Vec<(String, u32)>,
+    }
+
+    // Read recent trades to analyze patterns
+    let trades_path = "./dashboard_data/trades.json";
+    let mut league_counts: std::collections::HashMap<String, u32> = std::collections::HashMap::new();
+    let mut recent_near_misses = Vec::new();
+    let mut insights = Vec::new();
+
+    // Analyze trade history for league patterns
+    if let Ok(content) = std::fs::read_to_string(trades_path) {
+        if let Ok(trades) = serde_json::from_str::<Vec<serde_json::Value>>(&content) {
+            for trade in trades.iter().rev().take(100) {
+                if let Some(market) = trade.get("market").and_then(|v| v.as_str()) {
+                    // Extract league from market description
+                    let league = if market.contains("NFL") || market.contains("football") {
+                        "NFL"
+                    } else if market.contains("NBA") || market.contains("basketball") {
+                        "NBA"
+                    } else if market.contains("MLB") || market.contains("baseball") {
+                        "MLB"
+                    } else if market.contains("NHL") || market.contains("hockey") {
+                        "NHL"
+                    } else if market.contains("BTC") || market.contains("ETH") || market.contains("crypto") {
+                        "Crypto"
+                    } else {
+                        "Other"
+                    };
+                    *league_counts.entry(league.to_string()).or_insert(0) += 1;
+                }
+            }
+        }
+    }
+
+    // Generate insights based on data
+    if league_counts.is_empty() {
+        insights.push("🔍 No trades recorded yet - bot is scanning for opportunities".to_string());
+    } else {
+        let mut sorted: Vec<_> = league_counts.iter().collect();
+        sorted.sort_by(|a, b| b.1.cmp(a.1));
+
+        if let Some((league, count)) = sorted.first() {
+            insights.push(format!("📊 Most active: {} with {} recent trades", league, count));
+        }
+    }
+
+    // Read positions to check for any open arbs
+    let positions_path = "./positions.json";
+    if let Ok(content) = std::fs::read_to_string(positions_path) {
+        if let Ok(data) = serde_json::from_str::<serde_json::Value>(&content) {
+            if let Some(positions) = data.get("positions").and_then(|v| v.as_object()) {
+                let open_count = positions.len();
+                if open_count > 0 {
+                    insights.push(format!("📈 {} open positions awaiting settlement", open_count));
+                }
+            }
+        }
+    }
+
+    // Add time-based insight
+    let hour = chrono::Utc::now().hour();
+    let time_insight = match hour {
+        0..=5 => "🌙 Night hours - US markets mostly closed, crypto active",
+        6..=8 => "🌅 Early morning - European markets opening",
+        9..=12 => "☀️ Peak hours - US markets most active",
+        13..=16 => "📈 Afternoon session - good liquidity expected",
+        17..=20 => "🌆 Evening - sports games in progress",
+        21..=23 => "🌃 Late night - activity winding down",
+        _ => "⏰ Market hours vary by league",
+    };
+    insights.push(time_insight.to_string());
+
+    let mut best_leagues: Vec<(String, u32)> = league_counts.into_iter().collect();
+    best_leagues.sort_by(|a, b| b.1.cmp(&a.1));
+
+    let now = chrono::Utc::now();
+    let response = InsightsResponse {
+        generated_at: now.format("%Y-%m-%d %H:%M:%S UTC").to_string(),
+        near_misses: recent_near_misses,
+        insights,
+        best_leagues,
+    };
+
+    Json(response)
+}
+
 /// GET /
 async fn serve_dashboard() -> Html<&'static str> {
     Html(DASHBOARD_HTML)
@@ -598,6 +705,7 @@ pub async fn run_web_server(config: Arc<RwLock<RuntimeConfig>>) {
         .route("/api/analytics", get(get_analytics))
         .route("/api/trades", get(get_trades))
         .route("/api/positions", get(get_positions))
+        .route("/api/insights", get(get_insights))
         .route("/api/restart", post(trigger_restart))
         .with_state(state);
 
@@ -1092,6 +1200,7 @@ const DASHBOARD_HTML: &str = r##"<!DOCTYPE html>
         <!-- Tabs -->
         <div class="tabs">
             <button class="tab active" onclick="showTab('analytics')">Analytics</button>
+            <button class="tab" onclick="showTab('insights')">Insights</button>
             <button class="tab" onclick="showTab('positions')">Open Positions</button>
             <button class="tab" onclick="showTab('settings')">Settings</button>
             <button class="tab" onclick="showTab('trades')">Trade History</button>
@@ -1147,6 +1256,31 @@ const DASHBOARD_HTML: &str = r##"<!DOCTYPE html>
                         <div class="metric-value positive" id="proj-roi">0%</div>
                         <div class="metric-label">Projected 30d ROI</div>
                     </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Insights Tab -->
+        <div id="tab-insights" class="tab-content">
+            <div class="section">
+                <div class="section-title">Bot Insights</div>
+                <div id="insights-messages" style="margin-bottom: 20px;">
+                    <div style="color: #8b949e; padding: 20px; text-align: center;">Loading insights...</div>
+                </div>
+            </div>
+            <div class="section">
+                <div class="section-title">League Activity</div>
+                <div id="league-stats" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px;">
+                    <div style="color: #8b949e; padding: 20px; text-align: center;">Loading...</div>
+                </div>
+            </div>
+            <div class="section">
+                <div class="section-title">Tips for More Opportunities</div>
+                <div style="color: #c9d1d9; line-height: 1.8;">
+                    <p>📌 <strong>Best times:</strong> During live sports games and market open hours</p>
+                    <p>📌 <strong>High activity leagues:</strong> NFL, NBA, and major crypto events</p>
+                    <p>📌 <strong>Liquidity matters:</strong> Larger markets have more arb opportunities</p>
+                    <p>📌 <strong>Be patient:</strong> Good arbs come in waves, often around game times</p>
                 </div>
             </div>
         </div>
@@ -1272,13 +1406,14 @@ const DASHBOARD_HTML: &str = r##"<!DOCTYPE html>
             document.getElementById('content').style.display = 'none';
 
             try {
-                const [configRes, metaRes, statusRes, analyticsRes, tradesRes, positionsRes] = await Promise.all([
+                const [configRes, metaRes, statusRes, analyticsRes, tradesRes, positionsRes, insightsRes] = await Promise.all([
                     fetch('/api/config'),
                     fetch('/api/meta'),
                     fetch('/api/status'),
                     fetch('/api/analytics'),
                     fetch('/api/trades'),
-                    fetch('/api/positions')
+                    fetch('/api/positions'),
+                    fetch('/api/insights')
                 ]);
 
                 config = await configRes.json();
@@ -1287,11 +1422,13 @@ const DASHBOARD_HTML: &str = r##"<!DOCTYPE html>
                 const analytics = await analyticsRes.json();
                 const trades = await tradesRes.json();
                 const positions = await positionsRes.json();
+                const insights = await insightsRes.json();
 
                 updateStatus(status);
                 updateAnalytics(analytics);
                 updateTrades(trades);
                 updatePositions(positions);
+                updateInsights(insights);
                 renderSettings();
 
                 document.getElementById('content').style.display = 'block';
@@ -1299,6 +1436,31 @@ const DASHBOARD_HTML: &str = r##"<!DOCTYPE html>
                 showStatus('Failed to load: ' + e.message, 'error');
             }
             document.getElementById('loader').style.display = 'none';
+        }
+
+        function updateInsights(data) {
+            // Update insights messages
+            const messagesDiv = document.getElementById('insights-messages');
+            if (data.insights && data.insights.length > 0) {
+                messagesDiv.innerHTML = data.insights.map(msg =>
+                    `<div style="background:#21262d;padding:12px 16px;border-radius:8px;margin-bottom:8px;font-size:14px;">${msg}</div>`
+                ).join('');
+            } else {
+                messagesDiv.innerHTML = '<div style="color:#8b949e;padding:20px;text-align:center;">No insights available yet</div>';
+            }
+
+            // Update league stats
+            const leagueDiv = document.getElementById('league-stats');
+            if (data.best_leagues && data.best_leagues.length > 0) {
+                leagueDiv.innerHTML = data.best_leagues.map(([league, count]) =>
+                    `<div class="metric-card">
+                        <div class="metric-value">${count}</div>
+                        <div class="metric-label">${league}</div>
+                    </div>`
+                ).join('');
+            } else {
+                leagueDiv.innerHTML = '<div style="color:#8b949e;text-align:center;grid-column:1/-1;">No league data yet - trades will appear here</div>';
+            }
         }
 
         function updateStatus(status) {

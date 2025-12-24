@@ -10,6 +10,7 @@ pub mod config;
 pub mod crypto_discovery;
 pub mod discovery;
 pub mod execution;
+pub mod insights;
 pub mod kalshi;
 pub mod metrics;
 pub mod polymarket;
