@@ -527,70 +527,70 @@ async fn trigger_restart() -> impl IntoResponse {
     (StatusCode::OK, "Bot shutting down in 2 seconds. Use run_bot.sh for auto-restart.")
 }
 
-/// GET /api/insights - Market insights and near-misses
+/// GET /api/insights - Market insights and tracked markets
 async fn get_insights() -> impl IntoResponse {
     #[derive(serde::Serialize)]
-    struct NearMiss {
-        market: String,
+    struct LeagueMarkets {
         league: String,
-        total_cost_cents: u16,
-        gap_cents: i16,
-        gap_percent: f64,
-        yes_price: u16,
-        no_price: u16,
-        liquidity: f64,
-        arb_type: String,
+        icon: String,
+        markets: Vec<String>,
     }
 
     #[derive(serde::Serialize)]
     struct InsightsResponse {
         generated_at: String,
-        near_misses: Vec<NearMiss>,
         insights: Vec<String>,
-        best_leagues: Vec<(String, u32)>,
+        markets_by_league: Vec<LeagueMarkets>,
+        total_markets: usize,
     }
 
-    // Read recent trades to analyze patterns
-    let trades_path = "./dashboard_data/trades.json";
-    let mut league_counts: std::collections::HashMap<String, u32> = std::collections::HashMap::new();
-    let mut recent_near_misses = Vec::new();
     let mut insights = Vec::new();
+    let mut markets_by_league: HashMap<String, Vec<String>> = HashMap::new();
 
-    // Analyze trade history for league patterns
+    // Read recent trades to get unique markets
+    let trades_path = "./dashboard_data/trades.json";
     if let Ok(content) = std::fs::read_to_string(trades_path) {
         if let Ok(trades) = serde_json::from_str::<Vec<serde_json::Value>>(&content) {
-            for trade in trades.iter().rev().take(100) {
+            let mut seen_markets: std::collections::HashSet<String> = std::collections::HashSet::new();
+
+            for trade in trades.iter().rev() {
                 if let Some(market) = trade.get("market").and_then(|v| v.as_str()) {
+                    if seen_markets.contains(market) {
+                        continue;
+                    }
+                    seen_markets.insert(market.to_string());
+
                     // Extract league from market description
-                    let league = if market.contains("NFL") || market.contains("football") {
+                    let league = if market.contains("NFL") || market.to_lowercase().contains("football") {
                         "NFL"
-                    } else if market.contains("NBA") || market.contains("basketball") {
+                    } else if market.contains("NBA") || market.to_lowercase().contains("basketball") {
                         "NBA"
-                    } else if market.contains("MLB") || market.contains("baseball") {
+                    } else if market.contains("MLB") || market.to_lowercase().contains("baseball") {
                         "MLB"
-                    } else if market.contains("NHL") || market.contains("hockey") {
+                    } else if market.contains("NHL") || market.to_lowercase().contains("hockey") {
                         "NHL"
-                    } else if market.contains("BTC") || market.contains("ETH") || market.contains("crypto") {
+                    } else if market.contains("BTC") || market.contains("ETH") || market.to_lowercase().contains("bitcoin") || market.to_lowercase().contains("ethereum") {
                         "Crypto"
                     } else {
                         "Other"
                     };
-                    *league_counts.entry(league.to_string()).or_insert(0) += 1;
+
+                    markets_by_league
+                        .entry(league.to_string())
+                        .or_insert_with(Vec::new)
+                        .push(market.to_string());
                 }
             }
         }
     }
 
+    let total_markets: usize = markets_by_league.values().map(|v| v.len()).sum();
+
     // Generate insights based on data
-    if league_counts.is_empty() {
+    if total_markets == 0 {
         insights.push("🔍 No trades recorded yet - bot is scanning for opportunities".to_string());
     } else {
-        let mut sorted: Vec<_> = league_counts.iter().collect();
-        sorted.sort_by(|a, b| b.1.cmp(a.1));
-
-        if let Some((league, count)) = sorted.first() {
-            insights.push(format!("📊 Most active: {} with {} recent trades", league, count));
-        }
+        insights.push(format!("📊 Tracking {} unique markets across leagues", total_markets));
     }
 
     // Read positions to check for any open arbs
@@ -619,15 +619,36 @@ async fn get_insights() -> impl IntoResponse {
     };
     insights.push(time_insight.to_string());
 
-    let mut best_leagues: Vec<(String, u32)> = league_counts.into_iter().collect();
-    best_leagues.sort_by(|a, b| b.1.cmp(&a.1));
+    // Convert to sorted vec with icons
+    let league_order = ["NFL", "NBA", "MLB", "NHL", "Crypto", "Other"];
+    let icons: HashMap<&str, &str> = [
+        ("NFL", "🏈"),
+        ("NBA", "🏀"),
+        ("MLB", "⚾"),
+        ("NHL", "🏒"),
+        ("Crypto", "₿"),
+        ("Other", "📋"),
+    ].into_iter().collect();
+
+    let mut result_leagues: Vec<LeagueMarkets> = Vec::new();
+    for league in league_order {
+        if let Some(markets) = markets_by_league.get(league) {
+            if !markets.is_empty() {
+                result_leagues.push(LeagueMarkets {
+                    league: league.to_string(),
+                    icon: icons.get(league).unwrap_or(&"📋").to_string(),
+                    markets: markets.iter().take(10).cloned().collect(), // Limit to 10 per league
+                });
+            }
+        }
+    }
 
     let now = chrono::Utc::now();
     let response = InsightsResponse {
         generated_at: now.format("%Y-%m-%d %H:%M:%S UTC").to_string(),
-        near_misses: recent_near_misses,
         insights,
-        best_leagues,
+        markets_by_league: result_leagues,
+        total_markets,
     };
 
     Json(response)
@@ -1292,18 +1313,9 @@ const DASHBOARD_HTML: &str = r##"<!DOCTYPE html>
                 </div>
             </div>
             <div class="section">
-                <div class="section-title">League Activity</div>
-                <div id="league-stats" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px;">
-                    <div style="color: #8b949e; padding: 20px; text-align: center;">Loading...</div>
-                </div>
-            </div>
-            <div class="section">
-                <div class="section-title">Tips for More Opportunities</div>
-                <div style="color: #c9d1d9; line-height: 1.8;">
-                    <p>📌 <strong>Best times:</strong> During live sports games and market open hours</p>
-                    <p>📌 <strong>High activity leagues:</strong> NFL, NBA, and major crypto events</p>
-                    <p>📌 <strong>Liquidity matters:</strong> Larger markets have more arb opportunities</p>
-                    <p>📌 <strong>Be patient:</strong> Good arbs come in waves, often around game times</p>
+                <div class="section-title" id="markets-title">Markets Tracked (0)</div>
+                <div id="markets-grouped" style="display: flex; flex-direction: column; gap: 16px;">
+                    <div style="color: #8b949e; padding: 20px; text-align: center;">Loading markets...</div>
                 </div>
             </div>
         </div>
@@ -1481,17 +1493,24 @@ const DASHBOARD_HTML: &str = r##"<!DOCTYPE html>
                 messagesDiv.innerHTML = '<div style="color:#8b949e;padding:20px;text-align:center;">No insights available yet</div>';
             }
 
-            // Update league stats
-            const leagueDiv = document.getElementById('league-stats');
-            if (data.best_leagues && data.best_leagues.length > 0) {
-                leagueDiv.innerHTML = data.best_leagues.map(([league, count]) =>
-                    `<div class="metric-card">
-                        <div class="metric-value">${count}</div>
-                        <div class="metric-label">${league}</div>
+            // Update markets title
+            document.getElementById('markets-title').textContent = `Markets Tracked (${data.total_markets || 0})`;
+
+            // Update grouped markets list
+            const marketsDiv = document.getElementById('markets-grouped');
+            if (data.markets_by_league && data.markets_by_league.length > 0) {
+                marketsDiv.innerHTML = data.markets_by_league.map(league =>
+                    `<div style="background:#21262d;border-radius:8px;padding:12px;">
+                        <div style="font-weight:600;color:#f0f6fc;margin-bottom:8px;font-size:14px;">
+                            ${league.icon} ${league.league} (${league.markets.length})
+                        </div>
+                        <div style="color:#8b949e;font-size:12px;line-height:1.6;">
+                            ${league.markets.map(m => `• ${m}`).join('<br>')}
+                        </div>
                     </div>`
                 ).join('');
             } else {
-                leagueDiv.innerHTML = '<div style="color:#8b949e;text-align:center;grid-column:1/-1;">No league data yet - trades will appear here</div>';
+                marketsDiv.innerHTML = '<div style="color:#8b949e;padding:20px;text-align:center;">No markets tracked yet - trades will appear here</div>';
             }
         }
 
