@@ -3215,6 +3215,7 @@ dependencies = [
  "dashmap 6.1.0",
  "dotenvy",
  "futures-util",
+ "reqwest",
  "serde",
  "serde_json",
  "shared-market-client",
