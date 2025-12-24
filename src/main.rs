@@ -562,10 +562,18 @@ async fn main() -> Result<()> {
                             None
                         };
 
+                        // Get real league and market_type from MarketPair
+                        let (league, market_type_str) = heartbeat_state.get_by_id(market.market_id)
+                            .and_then(|m| m.pair.as_ref())
+                            .map(|p| (p.league.to_string(), format!("{:?}", p.market_type)))
+                            .unwrap_or_else(|| ("unknown".to_string(), "unknown".to_string()));
+
                         if let Some(logger) = get_opportunity_logger() {
                             let opp = create_opportunity(
                                 market.market_id,
                                 &desc,
+                                &league,
+                                &market_type_str,
                                 k_yes,
                                 k_no,
                                 p_yes,
@@ -578,10 +586,11 @@ async fn main() -> Result<()> {
                             logger.log_opportunity(opp);
                         }
 
-                        // Record observation to ML optimizer
+                        // Record observation to ML optimizer with real league data
                         if let Some(optimizer) = get_ml_optimizer() {
-                            optimizer.record_observation(
-                                &desc,
+                            optimizer.record_observation_with_league(
+                                &league,
+                                &market_type_str,
                                 best_cost,
                                 min_liq as u32 * 100, // Convert to cents
                                 was_executed,

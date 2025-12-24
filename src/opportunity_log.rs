@@ -330,6 +330,8 @@ pub fn kalshi_fee(price_cents: u16) -> u16 {
 pub fn create_opportunity(
     market_id: u16,
     market_name: &str,
+    league: &str,        // Real league from API (e.g., "epl", "nba", "nfl")
+    bet_type: &str,      // Real bet type from API (e.g., "moneyline", "spread", "total")
     kalshi_yes: u16,
     kalshi_no: u16,
     poly_yes: u16,
@@ -339,8 +341,32 @@ pub fn create_opportunity(
     was_executed: bool,
     rejection_reason: Option<&str>,
 ) -> ScannedOpportunity {
-    // Parse market category
-    let category = MarketCategory::from_market_name(market_name);
+    // Normalize league name for display
+    let sport = match league.to_lowercase().as_str() {
+        "nfl" => "NFL",
+        "nba" => "NBA",
+        "mlb" => "MLB",
+        "nhl" => "NHL",
+        "epl" | "premier_league" | "premier-league" => "EPL",
+        "la_liga" | "laliga" | "la-liga" => "La Liga",
+        "serie_a" | "seriea" | "serie-a" => "Serie A",
+        "bundesliga" => "Bundesliga",
+        "ligue_1" | "ligue1" | "ligue-1" => "Ligue 1",
+        "champions_league" | "ucl" => "UCL",
+        "ncaaf" | "college_football" => "NCAAF",
+        "ncaab" | "college_basketball" => "NCAAB",
+        "crypto" | "btc" | "eth" => "Crypto",
+        _ => league, // Keep original if not recognized
+    }.to_string();
+
+    // Normalize bet type for display
+    let bet_type_normalized = match bet_type.to_lowercase().as_str() {
+        "moneyline" | "winner" | "to_win" => "Moneyline",
+        "spread" | "handicap" | "point_spread" => "Spread",
+        "total" | "over_under" | "ou" => "Total",
+        "prop" | "player_prop" => "Prop",
+        _ => bet_type,
+    }.to_string();
 
     // Calculate best combination
     let k_yes_fee = kalshi_fee(kalshi_yes);
@@ -374,8 +400,8 @@ pub fn create_opportunity(
         timestamp: chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string(),
         market_id,
         market_name: market_name.to_string(),
-        sport: category.sport,
-        bet_type: category.bet_type,
+        sport,
+        bet_type: bet_type_normalized,
         kalshi_yes,
         kalshi_no,
         poly_yes,

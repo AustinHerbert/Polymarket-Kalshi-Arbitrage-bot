@@ -239,7 +239,7 @@ impl MlOptimizer {
         *self.auto_optimize.read()
     }
 
-    /// Record an opportunity observation
+    /// Record an opportunity observation (legacy - parses name)
     pub fn record_observation(
         &self,
         market_name: &str,
@@ -249,11 +249,61 @@ impl MlOptimizer {
         profit_cents: i16,
     ) {
         let category = MarketCategory::from_market_name(market_name);
-        let key = category.key();
+        self.record_observation_internal(&category.key(), liquidity_cents, was_executed, profit_cents);
+    }
 
+    /// Record an opportunity observation with real league data from API
+    pub fn record_observation_with_league(
+        &self,
+        league: &str,
+        market_type: &str,
+        _adjusted_cost_cents: u16,
+        liquidity_cents: u32,
+        was_executed: bool,
+        profit_cents: i16,
+    ) {
+        // Normalize league name
+        let normalized_league = match league.to_lowercase().as_str() {
+            "nfl" => "NFL",
+            "nba" => "NBA",
+            "mlb" => "MLB",
+            "nhl" => "NHL",
+            "epl" | "premier_league" | "premier-league" => "EPL",
+            "la_liga" | "laliga" | "la-liga" => "LaLiga",
+            "serie_a" | "seriea" | "serie-a" => "SerieA",
+            "bundesliga" => "Bundesliga",
+            "ligue_1" | "ligue1" | "ligue-1" => "Ligue1",
+            "champions_league" | "ucl" => "UCL",
+            "ncaaf" | "college_football" => "NCAAF",
+            "ncaab" | "college_basketball" => "NCAAB",
+            "crypto" | "btc" | "eth" => "Crypto",
+            _ => league,
+        };
+
+        // Normalize market type
+        let normalized_type = match market_type.to_lowercase().as_str() {
+            "moneyline" | "winner" => "Moneyline",
+            "spread" | "handicap" => "Spread",
+            "total" | "overunder" => "Total",
+            "prop" => "Prop",
+            _ => market_type,
+        };
+
+        let key = format!("{}_{}", normalized_league, normalized_type);
+        self.record_observation_internal(&key, liquidity_cents, was_executed, profit_cents);
+    }
+
+    /// Internal method to record observation
+    fn record_observation_internal(
+        &self,
+        key: &str,
+        liquidity_cents: u32,
+        was_executed: bool,
+        profit_cents: i16,
+    ) {
         let should_save = {
             let mut cats = self.category_settings.write();
-            let settings = cats.entry(key).or_insert_with(CategorySettings::default);
+            let settings = cats.entry(key.to_string()).or_insert_with(CategorySettings::default);
 
             settings.observations += 1;
             if was_executed {
