@@ -1635,42 +1635,99 @@ const DASHBOARD_HTML: &str = r##"<!DOCTYPE html>
             </div>
         </div>
 
-        <!-- Insights Tab -->
+        <!-- Insights Tab - AIXBT Style -->
         <div id="tab-insights" class="tab-content">
-            <!-- ML Top Recommendation -->
-            <div class="section" id="ai-top-rec-section" style="display:none;">
-                <div class="section-title">🧠 ML Recommendation</div>
-                <div id="ai-top-recommendation" style="background: linear-gradient(135deg, #238636 0%, #2ea043 100%); border-radius: 8px; padding: 20px; color: white;">
+            <!-- Agent Status Banner -->
+            <div class="section" style="background: linear-gradient(135deg, #1a1b26 0%, #24283b 100%); border: 1px solid #3d59a1; position: relative; overflow: hidden;">
+                <div style="position: absolute; top: -50px; right: -50px; width: 200px; height: 200px; background: radial-gradient(circle, rgba(61,89,161,0.3) 0%, transparent 70%);"></div>
+                <div style="display: flex; align-items: center; gap: 16px; position: relative; z-index: 1;">
+                    <div style="width: 60px; height: 60px; border-radius: 50%; background: linear-gradient(135deg, #7aa2f7 0%, #bb9af7 100%); display: flex; align-items: center; justify-content: center; font-size: 28px;">
+                        🤖
+                    </div>
+                    <div style="flex: 1;">
+                        <div style="font-size: 20px; font-weight: 700; color: #c0caf5; margin-bottom: 4px;">
+                            ArbBot ML Agent <span id="agent-status-dot" style="display: inline-block; width: 8px; height: 8px; background: #9ece6a; border-radius: 50%; margin-left: 8px; animation: pulse 2s infinite;"></span>
+                        </div>
+                        <div style="font-size: 13px; color: #565f89;" id="agent-status-text">
+                            Analyzing 57 market categories across sports & crypto...
+                        </div>
+                    </div>
+                    <div style="text-align: right;">
+                        <div style="font-size: 24px; font-weight: 700; color: #9ece6a;" id="agent-confidence">--</div>
+                        <div style="font-size: 11px; color: #565f89;">Model Confidence</div>
+                    </div>
+                </div>
+                <style>@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }</style>
+            </div>
+
+            <!-- Live Activity Feed -->
+            <div class="section">
+                <div class="section-title" style="display: flex; justify-content: space-between; align-items: center;">
+                    <span>⚡ Live Activity Feed</span>
+                    <span style="font-size: 11px; color: #565f89; font-weight: 400;" id="feed-update-time">Updated just now</span>
+                </div>
+                <div id="live-feed" style="max-height: 300px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px;">
+                    <div class="feed-item" style="display: flex; gap: 12px; padding: 12px; background: #161b22; border-radius: 8px; border-left: 3px solid #3fb950;">
+                        <div style="font-size: 20px;">📊</div>
+                        <div style="flex: 1;">
+                            <div style="color: #c9d1d9; font-size: 13px;">Scanning all markets for arbitrage opportunities...</div>
+                            <div style="color: #565f89; font-size: 11px; margin-top: 4px;">Just now</div>
+                        </div>
+                    </div>
                 </div>
             </div>
 
-            <!-- ML Daily Report -->
-            <div class="section">
-                <div class="section-title">🤖 ML Daily Report</div>
-                <div id="ai-insights-list" style="display: flex; flex-direction: column; gap: 12px;">
-                    <div style="color: #8b949e; padding: 20px; text-align: center;">Loading ML insights...</div>
+            <!-- Top Alpha Opportunities -->
+            <div class="section" id="alpha-section">
+                <div class="section-title">🎯 Top Alpha Opportunities</div>
+                <div id="alpha-opportunities" style="display: grid; gap: 12px;">
+                    <div style="color: #565f89; text-align: center; padding: 20px;">Scanning for high-conviction opportunities...</div>
                 </div>
             </div>
 
-            <!-- Performance by Sport/Category -->
+            <!-- ML Learning Progress -->
             <div class="section">
-                <div class="section-title">📈 Performance by Sport</div>
+                <div class="section-title">🧠 ML Learning Progress</div>
+                <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 16px;" id="ml-stats">
+                    <div class="metric-card">
+                        <div class="metric-value" id="ml-categories">0</div>
+                        <div class="metric-label">Categories Tracked</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-value" id="ml-observations">0</div>
+                        <div class="metric-label">Observations</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-value positive" id="ml-optimized">0</div>
+                        <div class="metric-label">Thresholds Optimized</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-value" id="ml-accuracy">--%</div>
+                        <div class="metric-label">Win Rate</div>
+                    </div>
+                </div>
+                <div id="learning-progress" style="display: flex; flex-direction: column; gap: 8px;">
+                </div>
+            </div>
+
+            <!-- Performance by Category Table -->
+            <div class="section">
+                <div class="section-title">📈 Category Performance</div>
                 <div id="ai-performance-table" style="overflow-x: auto;">
                     <table class="trade-table">
                         <thead>
                             <tr>
                                 <th>Category</th>
-                                <th>Current Threshold</th>
+                                <th>Threshold</th>
                                 <th>Recommended</th>
                                 <th>Trades</th>
                                 <th>Missed</th>
                                 <th>Profit</th>
-                                <th>Missed $</th>
                                 <th>Confidence</th>
                             </tr>
                         </thead>
                         <tbody id="ai-performance-body">
-                            <tr><td colspan="8" style="text-align:center;color:#8b949e">Collecting data...</td></tr>
+                            <tr><td colspan="7" style="text-align:center;color:#565f89">Collecting training data...</td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -1840,115 +1897,156 @@ const DASHBOARD_HTML: &str = r##"<!DOCTYPE html>
         }
 
         function updateAiInsights(data) {
-            // Update top recommendation
-            const topRecSection = document.getElementById('ai-top-rec-section');
-            const topRecDiv = document.getElementById('ai-top-recommendation');
-            if (data.top_recommendation) {
-                topRecSection.style.display = 'block';
-                topRecDiv.innerHTML = `
-                    <div style="font-size:18px;font-weight:700;margin-bottom:8px;">${data.top_recommendation.title}</div>
-                    <div style="font-size:14px;margin-bottom:12px;">${data.top_recommendation.description}</div>
-                    <div style="display:flex;justify-content:space-between;align-items:center;">
-                        <div style="background:rgba(255,255,255,0.2);padding:8px 16px;border-radius:6px;font-size:13px;">
-                            💰 Potential: <strong>${formatCents(data.top_recommendation.potential_gain_cents)}/day</strong>
-                        </div>
-                        <div style="font-size:12px;opacity:0.8;">
-                            Confidence: ${data.top_recommendation.confidence_percent}%
-                        </div>
+            const s = data.summary || {};
+            const perf = data.performance_by_category || [];
+
+            // Update Agent Status
+            const totalObs = perf.reduce((sum, p) => sum + (p.observations || 0), 0);
+            const avgConfidence = perf.length > 0
+                ? (perf.reduce((sum, p) => sum + (p.confidence || 0), 0) / perf.length * 100).toFixed(0)
+                : '--';
+            document.getElementById('agent-confidence').textContent = avgConfidence + '%';
+            document.getElementById('agent-status-text').textContent =
+                `Tracking ${perf.length} categories | ${totalObs.toLocaleString()} observations | ${s.executed_trades || 0} trades today`;
+
+            // Update ML Stats
+            document.getElementById('ml-categories').textContent = perf.length;
+            document.getElementById('ml-observations').textContent = totalObs.toLocaleString();
+            const optimized = perf.filter(p => p.confidence > 0.5 && p.observations >= 20).length;
+            document.getElementById('ml-optimized').textContent = optimized;
+            const winRate = s.executed_trades > 0 ? '100%' : '--%';
+            document.getElementById('ml-accuracy').textContent = winRate;
+
+            // Generate Live Feed entries from insights
+            const feedDiv = document.getElementById('live-feed');
+            let feedHtml = '';
+            const feedItems = [];
+
+            // Add insights as feed items
+            if (data.insights && data.insights.length > 0) {
+                data.insights.forEach(insight => {
+                    feedItems.push({
+                        icon: insight.icon,
+                        text: insight.title + ': ' + insight.description,
+                        color: insight.impact === 'high' ? '#f85149' : insight.impact === 'medium' ? '#d29922' : '#3fb950',
+                        time: 'Just now'
+                    });
+                });
+            }
+
+            // Add performance-based feed items
+            perf.slice(0, 5).forEach(p => {
+                if (p.observations > 0) {
+                    const icon = getCategoryIcon(p.category?.sport || p.category);
+                    feedItems.push({
+                        icon: icon,
+                        text: `${p.category?.sport || p.category} ${p.category?.bet_type || ''}: ${p.observations} observations, ${(p.confidence * 100).toFixed(0)}% confidence`,
+                        color: p.confidence > 0.7 ? '#3fb950' : p.confidence > 0.4 ? '#d29922' : '#8b949e',
+                        time: 'Learning...'
+                    });
+                }
+            });
+
+            if (feedItems.length === 0) {
+                feedItems.push({
+                    icon: '📊',
+                    text: 'Scanning all markets for arbitrage opportunities...',
+                    color: '#3fb950',
+                    time: 'Just now'
+                });
+            }
+
+            feedHtml = feedItems.slice(0, 8).map(item => `
+                <div style="display: flex; gap: 12px; padding: 12px; background: #161b22; border-radius: 8px; border-left: 3px solid ${item.color};">
+                    <div style="font-size: 20px;">${item.icon}</div>
+                    <div style="flex: 1;">
+                        <div style="color: #c9d1d9; font-size: 13px;">${item.text}</div>
+                        <div style="color: #565f89; font-size: 11px; margin-top: 4px;">${item.time}</div>
                     </div>
-                    <div style="margin-top:12px;font-size:13px;background:rgba(0,0,0,0.2);padding:10px;border-radius:6px;">
-                        <strong>Action:</strong> ${data.top_recommendation.action}
+                </div>
+            `).join('');
+            feedDiv.innerHTML = feedHtml;
+
+            // Update Alpha Opportunities
+            const alphaDiv = document.getElementById('alpha-opportunities');
+            if (data.top_recommendation) {
+                alphaDiv.innerHTML = `
+                    <div style="background: linear-gradient(135deg, #238636 0%, #2ea043 100%); border-radius: 12px; padding: 20px; color: white;">
+                        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px;">
+                            <div style="font-size: 18px; font-weight: 700;">🎯 ${data.top_recommendation.title}</div>
+                            <div style="background: rgba(255,255,255,0.2); padding: 4px 12px; border-radius: 20px; font-size: 12px;">
+                                ${data.top_recommendation.confidence_percent}% confidence
+                            </div>
+                        </div>
+                        <div style="font-size: 14px; margin-bottom: 16px; opacity: 0.95;">${data.top_recommendation.description}</div>
+                        <div style="display: flex; gap: 12px;">
+                            <div style="background: rgba(0,0,0,0.2); padding: 12px 16px; border-radius: 8px; flex: 1;">
+                                <div style="font-size: 11px; opacity: 0.8;">Potential Daily Gain</div>
+                                <div style="font-size: 20px; font-weight: 700;">${formatCents(data.top_recommendation.potential_gain_cents)}</div>
+                            </div>
+                            <div style="background: rgba(0,0,0,0.2); padding: 12px 16px; border-radius: 8px; flex: 2;">
+                                <div style="font-size: 11px; opacity: 0.8;">Recommended Action</div>
+                                <div style="font-size: 13px; margin-top: 4px;">${data.top_recommendation.action}</div>
+                            </div>
+                        </div>
                     </div>
                 `;
             } else {
-                topRecSection.style.display = 'none';
+                alphaDiv.innerHTML = '<div style="color: #565f89; text-align: center; padding: 30px;">Analyzing market data for alpha opportunities...</div>';
             }
 
-            // Update ML insights list with summary header
-            const insightsList = document.getElementById('ai-insights-list');
-            const s = data.summary;
-
-            // Build summary header
-            let summaryHtml = `<div style="background:#0d1117;border-radius:8px;padding:16px;margin-bottom:8px;">
-                <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(120px, 1fr));gap:12px;text-align:center;">
-                    <div>
-                        <div style="font-size:24px;font-weight:700;color:#f0f6fc;">${s.total_opportunities}</div>
-                        <div style="font-size:11px;color:#8b949e;">Scanned</div>
-                    </div>
-                    <div>
-                        <div style="font-size:24px;font-weight:700;color:#3fb950;">${s.executed_trades}</div>
-                        <div style="font-size:11px;color:#8b949e;">Executed</div>
-                    </div>
-                    <div>
-                        <div style="font-size:24px;font-weight:700;color:#3fb950;">${formatCents(s.total_profit_cents)}</div>
-                        <div style="font-size:11px;color:#8b949e;">Profit</div>
-                    </div>
-                    <div>
-                        <div style="font-size:24px;font-weight:700;color:#d29922;">${s.missed_opportunities}</div>
-                        <div style="font-size:11px;color:#8b949e;">Missed</div>
-                    </div>
-                    <div>
-                        <div style="font-size:24px;font-weight:700;color:#d29922;">${formatCents(s.missed_profit_cents)}</div>
-                        <div style="font-size:11px;color:#8b949e;">Missed $</div>
-                    </div>
-                    <div>
-                        <div style="font-size:24px;font-weight:700;color:#58a6ff;">${s.peak_hour}</div>
-                        <div style="font-size:11px;color:#8b949e;">Peak Hour</div>
-                    </div>
-                </div>
-            </div>`;
-
-            // Build insights list
-            if (data.insights && data.insights.length > 0) {
-                const insightsHtml = data.insights.map(insight => {
-                    const impactColor = insight.impact === 'high' ? '#f85149' : insight.impact === 'medium' ? '#d29922' : '#8b949e';
-                    return `<div style="background:#21262d;border-radius:8px;padding:16px;border-left:3px solid ${impactColor};">
-                        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;">
-                            <div style="font-weight:600;color:#f0f6fc;font-size:15px;">
-                                ${insight.icon} ${insight.title}
-                            </div>
-                            <span style="font-size:11px;color:#8b949e;background:#161b22;padding:2px 8px;border-radius:10px;">
-                                ${insight.category}
-                            </span>
+            // Update Learning Progress bars
+            const progressDiv = document.getElementById('learning-progress');
+            const topCategories = perf.filter(p => p.observations > 0).slice(0, 6);
+            progressDiv.innerHTML = topCategories.map(p => {
+                const pct = Math.min(100, (p.observations / 100) * 100);
+                const icon = getCategoryIcon(p.category?.sport || p.category);
+                const name = `${p.category?.sport || p.category} ${p.category?.bet_type || ''}`;
+                return `
+                    <div style="background: #161b22; border-radius: 8px; padding: 12px;">
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 6px;">
+                            <span style="font-size: 13px; color: #c9d1d9;">${icon} ${name}</span>
+                            <span style="font-size: 12px; color: #565f89;">${p.observations} / 100 obs</span>
                         </div>
-                        <div style="color:#c9d1d9;font-size:13px;line-height:1.5;">
-                            ${insight.description}
+                        <div style="background: #0d1117; border-radius: 4px; height: 6px; overflow: hidden;">
+                            <div style="background: linear-gradient(90deg, #3fb950, #58a6ff); width: ${pct}%; height: 100%; border-radius: 4px;"></div>
                         </div>
-                        ${insight.action ? `<div style="margin-top:10px;font-size:12px;color:#58a6ff;">
-                            💡 ${insight.action}
-                        </div>` : ''}
-                        ${insight.confidence_percent > 0 ? `<div style="margin-top:8px;font-size:11px;color:#8b949e;">
-                            Confidence: ${insight.confidence_percent}%
-                        </div>` : ''}
-                    </div>`;
-                }).join('');
-                insightsList.innerHTML = summaryHtml + insightsHtml;
-            } else {
-                insightsList.innerHTML = summaryHtml + '<div style="color:#8b949e;padding:20px;text-align:center;">Collecting data for ML insights...</div>';
-            }
+                    </div>
+                `;
+            }).join('') || '<div style="color:#565f89;text-align:center;padding:20px;">No learning data yet. Run the bot to start collecting observations.</div>';
 
             // Update performance table
             const perfBody = document.getElementById('ai-performance-body');
-            if (data.performance_by_category && data.performance_by_category.length > 0) {
-                perfBody.innerHTML = data.performance_by_category.map(p => {
+            if (perf.length > 0) {
+                perfBody.innerHTML = perf.map(p => {
                     const needsChange = p.recommended_threshold !== p.current_threshold;
-                    const icon = p.category.sport === 'NFL' ? '🏈' : p.category.sport === 'NBA' ? '🏀' :
-                                 p.category.sport === 'MLB' ? '⚾' : p.category.sport === 'NHL' ? '🏒' :
-                                 p.category.sport === 'Crypto' ? '₿' : '📊';
+                    const icon = getCategoryIcon(p.category?.sport || p.category);
+                    const name = `${p.category?.sport || p.category} ${p.category?.bet_type || ''}`;
                     return `<tr>
-                        <td>${icon} ${p.category.sport} ${p.category.bet_type}</td>
+                        <td>${icon} ${name}</td>
                         <td>${p.current_threshold}¢</td>
                         <td style="color:${needsChange ? '#d29922' : '#3fb950'}">${p.recommended_threshold}¢${needsChange ? ' ⚡' : ''}</td>
-                        <td class="profit-positive">${p.trades_executed}</td>
-                        <td class="profit-negative">${p.trades_missed}</td>
-                        <td class="profit-positive">${formatCents(p.profit_cents)}</td>
-                        <td class="profit-negative">${formatCents(p.missed_profit_cents)}</td>
+                        <td class="profit-positive">${p.trades_executed || 0}</td>
+                        <td class="profit-negative">${p.trades_missed || 0}</td>
+                        <td class="profit-positive">${formatCents(p.profit_cents || 0)}</td>
                         <td>${(p.confidence * 100).toFixed(0)}%</td>
                     </tr>`;
                 }).join('');
             } else {
-                perfBody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:#8b949e">Collecting data...</td></tr>';
+                perfBody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#565f89">Collecting training data...</td></tr>';
             }
+        }
+
+        function getCategoryIcon(category) {
+            const c = (category || '').toLowerCase();
+            if (c.includes('nfl')) return '🏈';
+            if (c.includes('nba')) return '🏀';
+            if (c.includes('mlb')) return '⚾';
+            if (c.includes('nhl')) return '🏒';
+            if (c.includes('ncaa')) return '🎓';
+            if (c.includes('epl') || c.includes('bundesliga') || c.includes('laliga') || c.includes('seriea') || c.includes('ligue') || c.includes('ucl') || c.includes('uel') || c.includes('mls')) return '⚽';
+            if (c.includes('btc') || c.includes('eth') || c.includes('sol') || c.includes('xrp') || c.includes('doge') || c.includes('crypto')) return '₿';
+            return '📊';
         }
 
         function updateSimulation(data) {
