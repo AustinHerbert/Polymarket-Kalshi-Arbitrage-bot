@@ -947,6 +947,12 @@ const DASHBOARD_HTML: &str = r##"<!DOCTYPE html>
         .actions { margin-top: 20px; display: flex; gap: 12px; }
 
         /* Trade Table */
+        /* Table scroll wrapper */
+        .table-scroll {
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+        }
+
         .trade-table {
             width: 100%;
             border-collapse: collapse;
@@ -997,43 +1003,59 @@ const DASHBOARD_HTML: &str = r##"<!DOCTYPE html>
 
         /* Mobile Responsive */
         @media (max-width: 768px) {
-            body { padding: 12px; }
-            h1 { font-size: 20px; }
-            .subtitle { font-size: 12px; margin-bottom: 12px; }
+            body {
+                padding: 10px;
+                max-width: 100%;
+                overflow-x: hidden;
+            }
+            h1 { font-size: 18px; }
+            .subtitle { font-size: 11px; margin-bottom: 10px; }
 
             /* Status bar - 2 columns on mobile */
             .status-bar {
                 grid-template-columns: repeat(2, 1fr);
-                gap: 8px;
+                gap: 6px;
             }
-            .status-card { padding: 12px; }
-            .status-value { font-size: 18px; }
-            .status-label { font-size: 10px; }
+            .status-card {
+                padding: 10px 8px;
+                min-width: 0;
+            }
+            .status-value { font-size: 16px; }
+            .status-label { font-size: 9px; }
+            .mode-badge { font-size: 12px; padding: 3px 8px; }
 
             /* Tabs - horizontal scroll */
             .tabs {
                 overflow-x: auto;
                 -webkit-overflow-scrolling: touch;
                 scrollbar-width: none;
-                padding-bottom: 12px;
+                padding-bottom: 10px;
+                margin: 0 -10px;
+                padding-left: 10px;
+                padding-right: 10px;
             }
             .tabs::-webkit-scrollbar { display: none; }
             .tab {
                 flex-shrink: 0;
-                padding: 10px 14px;
-                font-size: 13px;
+                padding: 8px 12px;
+                font-size: 12px;
+                white-space: nowrap;
             }
 
             /* Sections */
-            .section { padding: 14px; }
-            .section-title { font-size: 14px; }
+            .section {
+                padding: 12px;
+                margin-left: 0;
+                margin-right: 0;
+            }
+            .section-title { font-size: 13px; }
 
             /* Settings */
             .setting {
                 flex-direction: column;
                 align-items: flex-start;
                 gap: 10px;
-                padding: 14px 0;
+                padding: 12px 0;
             }
             .setting-info { width: 100%; }
             .setting-control {
@@ -1077,34 +1099,35 @@ const DASHBOARD_HTML: &str = r##"<!DOCTYPE html>
             /* Analytics grid */
             .analytics-grid {
                 grid-template-columns: repeat(2, 1fr);
-                gap: 10px;
+                gap: 8px;
             }
-            .metric-card { padding: 12px; }
-            .metric-value { font-size: 18px; }
-            .metric-label { font-size: 10px; }
+            .metric-card { padding: 10px; }
+            .metric-value { font-size: 16px; }
+            .metric-label { font-size: 9px; }
 
-            /* Trade table - horizontal scroll */
-            .section:has(.trade-table) {
-                padding: 14px 0;
-            }
-            .trade-table-wrapper {
+            /* Trade table - horizontal scroll wrapper */
+            .table-scroll {
                 overflow-x: auto;
                 -webkit-overflow-scrolling: touch;
-                margin: 0 -14px;
-                padding: 0 14px;
+                margin: 0;
             }
             .trade-table {
-                min-width: 600px;
-                font-size: 12px;
+                min-width: 500px;
+                font-size: 11px;
             }
             .trade-table th, .trade-table td {
-                padding: 8px 6px;
+                padding: 6px 4px;
                 white-space: nowrap;
             }
 
-            /* Positions table */
+            /* Positions grid */
             .positions-grid {
                 grid-template-columns: 1fr;
+            }
+
+            /* Position cards on mobile */
+            #positions-list .metric-card {
+                padding: 10px;
             }
         }
 
@@ -1355,22 +1378,24 @@ const DASHBOARD_HTML: &str = r##"<!DOCTYPE html>
         <div id="tab-trades" class="tab-content">
             <div class="section">
                 <div class="section-title">Recent Trades (Last 50)</div>
-                <table class="trade-table">
-                    <thead>
-                        <tr>
-                            <th>Time</th>
-                            <th>Market</th>
-                            <th>Type</th>
-                            <th>Profit</th>
-                            <th>Volume</th>
-                            <th>Latency</th>
-                            <th>Status</th>
-                        </tr>
-                    </thead>
-                    <tbody id="trades-body">
-                        <tr><td colspan="7" style="text-align:center;color:#8b949e">No trades yet</td></tr>
-                    </tbody>
-                </table>
+                <div class="table-scroll">
+                    <table class="trade-table">
+                        <thead>
+                            <tr>
+                                <th>Time</th>
+                                <th>Market</th>
+                                <th>Type</th>
+                                <th>Profit</th>
+                                <th>Volume</th>
+                                <th>Latency</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody id="trades-body">
+                            <tr><td colspan="7" style="text-align:center;color:#8b949e">No trades yet</td></tr>
+                        </tbody>
+                    </table>
+                </div>
             </div>
         </div>
     </div>
