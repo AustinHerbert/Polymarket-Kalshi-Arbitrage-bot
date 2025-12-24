@@ -1003,7 +1003,19 @@ pub async fn run_web_server(config: Arc<RwLock<RuntimeConfig>>) {
     let addr = format!("0.0.0.0:{}", port);
     info!("[WEB] Starting config dashboard on http://{}", addr);
 
-    let listener = tokio::net::TcpListener::bind(&addr).await.unwrap();
+    // Use socket2 to set SO_REUSEADDR before binding
+    let socket = socket2::Socket::new(
+        socket2::Domain::IPV4,
+        socket2::Type::STREAM,
+        Some(socket2::Protocol::TCP),
+    ).expect("Failed to create socket");
+    socket.set_reuse_address(true).expect("Failed to set SO_REUSEADDR");
+    socket.set_nonblocking(true).expect("Failed to set nonblocking");
+    let addr_parsed: std::net::SocketAddr = addr.parse().expect("Invalid address");
+    socket.bind(&addr_parsed.into()).expect("Failed to bind socket");
+    socket.listen(1024).expect("Failed to listen");
+    let std_listener: std::net::TcpListener = socket.into();
+    let listener = tokio::net::TcpListener::from_std(std_listener).expect("Failed to create tokio listener");
     if let Err(e) = axum::serve(listener, app).await {
         warn!("[WEB] Server error: {}", e);
     }
