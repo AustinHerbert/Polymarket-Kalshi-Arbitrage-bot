@@ -385,6 +385,18 @@ impl KalshiApiClient {
         debug!("[KALSHI] {} filled={}", resp.order.status, resp.order.filled_count());
         Ok(resp)
     }
+
+    /// Get account balance in cents
+    pub async fn get_balance(&self) -> Result<i64> {
+        #[derive(Deserialize)]
+        struct BalanceResponse {
+            balance: i64,  // Balance in cents
+        }
+
+        let path = "/portfolio/balance";
+        let resp: BalanceResponse = self.get(path).await?;
+        Ok(resp.balance)
+    }
 }
 
 // === WebSocket Message Types ===

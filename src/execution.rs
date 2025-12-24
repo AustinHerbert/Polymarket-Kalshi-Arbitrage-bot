@@ -10,6 +10,7 @@ use std::time::{Duration, Instant};
 use tokio::sync::mpsc;
 use tracing::{info, warn, error};
 
+use crate::balance_tracker::BalanceTracker;
 use crate::kalshi::KalshiApiClient;
 use crate::polymarket_clob::SharedAsyncClient;
 use crate::types::{
@@ -61,6 +62,8 @@ pub struct ExecutionEngine {
     test_mode: bool,
     /// Priority configuration for liquidity constraints (optional)
     priority_config: Option<PriorityConfig>,
+    /// Balance tracker for dynamic position sizing
+    balance_tracker: Option<Arc<BalanceTracker>>,
 }
 
 impl ExecutionEngine {
@@ -71,6 +74,7 @@ impl ExecutionEngine {
         circuit_breaker: Arc<CircuitBreaker>,
         position_channel: PositionChannel,
         dry_run: bool,
+        balance_tracker: Option<Arc<BalanceTracker>>,
     ) -> Self {
         let test_mode = std::env::var("TEST_ARB")
             .map(|v| v == "1" || v == "true")
@@ -97,6 +101,7 @@ impl ExecutionEngine {
             dry_run,
             test_mode,
             priority_config,
+            balance_tracker,
         }
     }
 
@@ -194,6 +199,27 @@ impl ExecutionEngine {
                     latency_ns: self.clock.now_ns() - req.detected_ns,
                     error: Some("Below min profit %"),
                 });
+            }
+        }
+
+        // Dynamic sizing based on account balance
+        if let Some(ref tracker) = self.balance_tracker {
+            if let Some(balance_cents) = tracker.kalshi_balance_cents() {
+                // Cost per contract = yes_price + no_price (both sides of arb)
+                let cost_per_contract = (req.yes_price + req.no_price) as i64;
+                if cost_per_contract > 0 {
+                    // Use 90% of balance to leave buffer for fees
+                    let safe_balance = ((balance_cents as f64) * 0.9) as i64;
+                    let max_from_balance = safe_balance / cost_per_contract;
+
+                    if max_from_balance < max_contracts {
+                        info!(
+                            "[EXEC] 💰 Balance cap: {} → {} contracts (${:.2} available)",
+                            max_contracts, max_from_balance, balance_cents as f64 / 100.0
+                        );
+                        max_contracts = max_from_balance;
+                    }
+                }
             }
         }
 

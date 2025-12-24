@@ -22,6 +22,7 @@
 //! - **Circuit breaker protection** with configurable risk limits
 //! - **Market discovery system** with intelligent caching and incremental updates
 
+mod balance_tracker;
 mod cache;
 mod circuit_breaker;
 mod config;
@@ -291,6 +292,14 @@ async fn main() -> Result<()> {
     let threshold_cents: PriceCents = ((ARB_THRESHOLD * 100.0).round() as u16).max(1);
     info!("   Execution threshold: {} cents", threshold_cents);
 
+    // Create balance tracker for dynamic position sizing
+    let balance_tracker = balance_tracker::BalanceTracker::new();
+    tokio::spawn(balance_tracker::run_balance_tracker(
+        balance_tracker.clone(),
+        kalshi_api.clone(),
+        60, // Refresh every 60 seconds
+    ));
+
     let engine = Arc::new(ExecutionEngine::new(
         kalshi_api.clone(),
         poly_async,
@@ -298,6 +307,7 @@ async fn main() -> Result<()> {
         circuit_breaker.clone(),
         position_channel,
         dry_run,
+        Some(balance_tracker),
     ));
 
     let exec_handle = tokio::spawn(run_execution_loop(exec_rx, engine));
