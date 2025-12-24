@@ -531,6 +531,51 @@ async fn serve_dashboard() -> Html<&'static str> {
     Html(DASHBOARD_HTML)
 }
 
+/// PWA manifest for mobile "Add to Home Screen"
+async fn serve_manifest() -> impl IntoResponse {
+    let manifest = r##"{
+    "name": "Arbitrage Bot Dashboard",
+    "short_name": "Arb Bot",
+    "description": "Real-time arbitrage trading bot monitoring",
+    "start_url": "/",
+    "display": "standalone",
+    "background_color": "#0d1117",
+    "theme_color": "#0d1117",
+    "orientation": "portrait-primary",
+    "icons": [
+        {
+            "src": "/icon.svg",
+            "sizes": "any",
+            "type": "image/svg+xml",
+            "purpose": "any"
+        }
+    ]
+}"##;
+    (
+        StatusCode::OK,
+        [("Content-Type", "application/manifest+json")],
+        manifest
+    )
+}
+
+/// Simple SVG icon for PWA
+async fn serve_icon() -> impl IntoResponse {
+    // Simple green dollar sign icon as SVG
+    let svg = r##"<svg xmlns="http://www.w3.org/2000/svg" width="192" height="192" viewBox="0 0 192 192">
+        <rect width="192" height="192" rx="32" fill="#0d1117"/>
+        <circle cx="96" cy="96" r="70" fill="#238636" opacity="0.2"/>
+        <path d="M96 40 L96 152 M76 60 L116 60 M76 132 L116 132"
+              stroke="#3fb950" stroke-width="8" stroke-linecap="round"/>
+        <path d="M70 80 Q70 60 96 60 Q122 60 122 80 Q122 96 96 96 Q70 96 70 112 Q70 132 96 132 Q122 132 122 112"
+              stroke="#3fb950" stroke-width="8" fill="none" stroke-linecap="round"/>
+    </svg>"##;
+    (
+        StatusCode::OK,
+        [("Content-Type", "image/svg+xml")],
+        svg
+    )
+}
+
 /// Create and run the web server
 pub async fn run_web_server(config: Arc<RwLock<RuntimeConfig>>) {
     let port = std::env::var("WEB_CONFIG_PORT")
@@ -545,6 +590,8 @@ pub async fn run_web_server(config: Arc<RwLock<RuntimeConfig>>) {
 
     let app = Router::new()
         .route("/", get(serve_dashboard))
+        .route("/manifest.json", get(serve_manifest))
+        .route("/icon.svg", get(serve_icon))
         .route("/api/config", get(get_config).post(update_config))
         .route("/api/meta", get(get_meta))
         .route("/api/status", get(get_status))
@@ -840,13 +887,171 @@ const DASHBOARD_HTML: &str = r##"<!DOCTYPE html>
         .loader { display: none; color: #8b949e; padding: 20px; text-align: center; }
         #content { display: none; }
 
-        /* Responsive */
-        @media (max-width: 600px) {
-            .status-bar { grid-template-columns: repeat(2, 1fr); }
-            .setting { flex-direction: column; align-items: flex-start; gap: 8px; }
-            .setting-control { text-align: left; }
+        /* Mobile Responsive */
+        @media (max-width: 768px) {
+            body { padding: 12px; }
+            h1 { font-size: 20px; }
+            .subtitle { font-size: 12px; margin-bottom: 12px; }
+
+            /* Status bar - 2 columns on mobile */
+            .status-bar {
+                grid-template-columns: repeat(2, 1fr);
+                gap: 8px;
+            }
+            .status-card { padding: 12px; }
+            .status-value { font-size: 18px; }
+            .status-label { font-size: 10px; }
+
+            /* Tabs - horizontal scroll */
+            .tabs {
+                overflow-x: auto;
+                -webkit-overflow-scrolling: touch;
+                scrollbar-width: none;
+                padding-bottom: 12px;
+            }
+            .tabs::-webkit-scrollbar { display: none; }
+            .tab {
+                flex-shrink: 0;
+                padding: 10px 14px;
+                font-size: 13px;
+            }
+
+            /* Sections */
+            .section { padding: 14px; }
+            .section-title { font-size: 14px; }
+
+            /* Settings */
+            .setting {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 10px;
+                padding: 14px 0;
+            }
+            .setting-info { width: 100%; }
+            .setting-control {
+                width: 100%;
+                text-align: left;
+            }
+            .setting-control input[type="number"] {
+                width: 100%;
+                padding: 12px;
+                font-size: 16px; /* Prevents iOS zoom */
+            }
+
+            /* Toggle buttons - larger touch targets */
+            .toggle-switch {
+                width: 52px;
+                height: 28px;
+            }
+            .toggle-switch:after {
+                width: 22px;
+                height: 22px;
+                top: 3px;
+                left: 3px;
+            }
+            .toggle-btn input:checked + .toggle-switch:after {
+                transform: translateX(24px);
+            }
+
+            /* Action buttons - full width */
+            .actions {
+                flex-direction: column;
+                gap: 10px;
+            }
+            .btn {
+                width: 100%;
+                padding: 14px 20px;
+                font-size: 15px;
+                margin-right: 0;
+                text-align: center;
+            }
+
+            /* Analytics grid */
+            .analytics-grid {
+                grid-template-columns: repeat(2, 1fr);
+                gap: 10px;
+            }
+            .metric-card { padding: 12px; }
+            .metric-value { font-size: 18px; }
+            .metric-label { font-size: 10px; }
+
+            /* Trade table - horizontal scroll */
+            .section:has(.trade-table) {
+                padding: 14px 0;
+            }
+            .trade-table-wrapper {
+                overflow-x: auto;
+                -webkit-overflow-scrolling: touch;
+                margin: 0 -14px;
+                padding: 0 14px;
+            }
+            .trade-table {
+                min-width: 600px;
+                font-size: 12px;
+            }
+            .trade-table th, .trade-table td {
+                padding: 8px 6px;
+                white-space: nowrap;
+            }
+
+            /* Positions table */
+            .positions-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        /* Extra small screens */
+        @media (max-width: 380px) {
+            .status-bar { grid-template-columns: 1fr; }
+            .analytics-grid { grid-template-columns: 1fr; }
+        }
+
+        /* PWA install prompt */
+        .install-prompt {
+            display: none;
+            position: fixed;
+            bottom: 20px;
+            left: 20px;
+            right: 20px;
+            background: #238636;
+            color: white;
+            padding: 16px;
+            border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+            z-index: 1000;
+            text-align: center;
+        }
+        .install-prompt.show { display: block; }
+        .install-prompt button {
+            background: white;
+            color: #238636;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 6px;
+            font-weight: 600;
+            margin-top: 10px;
+            cursor: pointer;
+        }
+        .install-close {
+            position: absolute;
+            top: 8px;
+            right: 12px;
+            background: none;
+            border: none;
+            color: white;
+            font-size: 20px;
+            cursor: pointer;
         }
     </style>
+
+    <!-- PWA Support -->
+    <link rel="manifest" href="/manifest.json">
+    <link rel="icon" href="/icon.svg" type="image/svg+xml">
+    <link rel="apple-touch-icon" href="/icon.svg">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Arb Bot">
+    <meta name="theme-color" content="#0d1117">
 </head>
 <body>
     <h1>Arbitrage Bot Dashboard</h1>
