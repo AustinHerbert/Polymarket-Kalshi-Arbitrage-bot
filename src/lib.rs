@@ -13,6 +13,7 @@ pub mod execution;
 pub mod insights;
 pub mod kalshi;
 pub mod metrics;
+pub mod ml_optimizer;
 pub mod opportunity_log;
 pub mod polymarket;
 pub mod polymarket_clob;

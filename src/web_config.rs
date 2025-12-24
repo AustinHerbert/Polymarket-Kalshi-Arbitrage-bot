@@ -33,6 +33,8 @@ pub struct RuntimeConfig {
     pub priority_mode: bool,
     /// Crypto markets enabled
     pub crypto_enabled: bool,
+    /// AI auto-optimization - automatically adjusts thresholds per market to maximize daily profit
+    pub auto_optimize: bool,
 
     // === LIQUIDITY SETTINGS ===
     /// Minimum liquidity in cents per side
@@ -66,6 +68,7 @@ impl Default for RuntimeConfig {
             dry_run: true,
             priority_mode: true,
             crypto_enabled: true,
+            auto_optimize: false,
             min_liquidity_cents: 25000,
             max_liquidity_cents: 250000,
             max_daily_loss_cents: 100000,
@@ -95,6 +98,7 @@ impl RuntimeConfig {
             dry_run: parse_bool(&get_env("DRY_RUN", "1")),
             priority_mode: parse_bool(&get_env("PRIORITY_MODE", "1")),
             crypto_enabled: parse_bool(&get_env("CRYPTO_ENABLED", "0")),
+            auto_optimize: parse_bool(&get_env("AUTO_OPTIMIZE", "0")),
             min_liquidity_cents: get_env("MIN_LIQUIDITY_CENTS", "25000")
                 .parse().unwrap_or(25000),
             max_liquidity_cents: get_env("MAX_LIQUIDITY_CENTS", "250000")
@@ -123,6 +127,7 @@ impl RuntimeConfig {
             ("DRY_RUN", if self.dry_run { "1" } else { "0" }.to_string()),
             ("PRIORITY_MODE", if self.priority_mode { "1" } else { "0" }.to_string()),
             ("CRYPTO_ENABLED", if self.crypto_enabled { "1" } else { "0" }.to_string()),
+            ("AUTO_OPTIMIZE", if self.auto_optimize { "1" } else { "0" }.to_string()),
             ("MIN_LIQUIDITY_CENTS", self.min_liquidity_cents.to_string()),
             ("MAX_LIQUIDITY_CENTS", self.max_liquidity_cents.to_string()),
             ("MAX_DAILY_LOSS_CENTS", self.max_daily_loss_cents.to_string()),
@@ -273,6 +278,15 @@ fn get_settings_meta() -> Vec<SettingMeta> {
             description: "Enable BTC/ETH crypto market discovery and trading",
             setting_type: "toggle",
             requires_restart: true,
+            min: None,
+            max: None,
+        },
+        SettingMeta {
+            key: "auto_optimize",
+            label: "AI Auto-Optimize",
+            description: "AI adjusts thresholds per sport/market to maximize daily profit. Only guardrail: must be profitable after fees.",
+            setting_type: "toggle",
+            requires_restart: false,
             min: None,
             max: None,
         },
@@ -732,6 +746,182 @@ async fn get_insights() -> impl IntoResponse {
     Json(response)
 }
 
+/// GET /api/ai-insights - AI-powered optimization recommendations
+async fn get_ai_insights() -> impl IntoResponse {
+    use crate::ml_optimizer::{get_ml_optimizer, AiInsight, CategoryPerformance};
+    use crate::opportunity_log::get_opportunity_logger;
+
+    #[derive(serde::Serialize)]
+    struct AiInsightsResponse {
+        generated_at: String,
+        auto_optimize_enabled: bool,
+        insights: Vec<AiInsight>,
+        performance_by_category: Vec<CategoryPerformance>,
+        top_recommendation: Option<TopRecommendation>,
+        summary: SummaryStats,
+    }
+
+    #[derive(serde::Serialize)]
+    struct TopRecommendation {
+        title: String,
+        description: String,
+        action: String,
+        potential_gain_cents: i64,
+        confidence_percent: u8,
+    }
+
+    #[derive(serde::Serialize)]
+    struct SummaryStats {
+        total_opportunities: usize,
+        executed_trades: usize,
+        missed_opportunities: usize,
+        total_profit_cents: i64,
+        missed_profit_cents: i64,
+        peak_hour: String,
+    }
+
+    let now = chrono::Utc::now();
+    let mut insights = Vec::new();
+    let mut performance = Vec::new();
+    let mut top_rec: Option<TopRecommendation> = None;
+
+    let auto_optimize_enabled = get_ml_optimizer()
+        .map(|opt| opt.is_auto_optimize_enabled())
+        .unwrap_or(false);
+
+    let mut summary = SummaryStats {
+        total_opportunities: 0,
+        executed_trades: 0,
+        missed_opportunities: 0,
+        total_profit_cents: 0,
+        missed_profit_cents: 0,
+        peak_hour: "N/A".to_string(),
+    };
+
+    // Get opportunity data
+    if let Some(logger) = get_opportunity_logger() {
+        let opp_data = logger.get_opportunity_data();
+        summary.total_opportunities = opp_data.len();
+
+        if !opp_data.is_empty() {
+            // Get ML optimizer analysis
+            if let Some(optimizer) = get_ml_optimizer() {
+                // Run optimization and get insights
+                insights = optimizer.run_optimization_cycle(&opp_data);
+                performance = optimizer.get_performance_summary(&opp_data);
+
+                // Calculate summary stats
+                summary.executed_trades = opp_data.iter().filter(|o| o.was_executed).count();
+                summary.missed_opportunities = opp_data.iter()
+                    .filter(|o| !o.was_executed && o.adjusted_cost_cents < 100)
+                    .count();
+                summary.total_profit_cents = opp_data.iter()
+                    .filter(|o| o.was_executed)
+                    .map(|o| (100 - o.adjusted_cost_cents as i16) as i64)
+                    .sum();
+                summary.missed_profit_cents = opp_data.iter()
+                    .filter(|o| !o.was_executed && o.adjusted_cost_cents < 100)
+                    .map(|o| (100 - o.adjusted_cost_cents as i16) as i64)
+                    .sum();
+
+                // Find peak hour
+                let mut by_hour: std::collections::HashMap<u32, usize> = std::collections::HashMap::new();
+                for opp in &opp_data {
+                    if let Some(hour) = opp.timestamp.split(' ')
+                        .nth(1)
+                        .and_then(|t| t.split(':').next())
+                        .and_then(|h| h.parse::<u32>().ok())
+                    {
+                        *by_hour.entry(hour).or_default() += 1;
+                    }
+                }
+                if let Some((hour, _)) = by_hour.iter().max_by_key(|(_, count)| *count) {
+                    summary.peak_hour = format!("{}:00 - {}:00 UTC", hour, (hour + 1) % 24);
+                }
+
+                // Generate top recommendation from performance data
+                if let Some(best) = performance.iter()
+                    .filter(|p| p.missed_profit_cents > 0)
+                    .max_by_key(|p| p.missed_profit_cents)
+                {
+                    if best.missed_profit_cents > 50 { // Only recommend if meaningful
+                        top_rec = Some(TopRecommendation {
+                            title: format!("Optimize {} {}", best.category.sport, best.category.bet_type),
+                            description: format!(
+                                "You missed {} trades worth ${:.2} in {} {} markets. Adjusting the threshold could capture these.",
+                                best.trades_missed,
+                                best.missed_profit_cents as f64 / 100.0,
+                                best.category.sport,
+                                best.category.bet_type
+                            ),
+                            action: if best.recommended_threshold < best.current_threshold {
+                                format!("Lower threshold from {}¢ to {}¢ for {} {}",
+                                    best.current_threshold, best.recommended_threshold,
+                                    best.category.sport, best.category.bet_type)
+                            } else {
+                                format!("Adjust threshold to {}¢ for {} {}",
+                                    best.recommended_threshold,
+                                    best.category.sport, best.category.bet_type)
+                            },
+                            potential_gain_cents: best.missed_profit_cents,
+                            confidence_percent: (best.confidence * 100.0) as u8,
+                        });
+                    }
+                }
+            }
+        } else {
+            // No data yet
+            insights.push(AiInsight {
+                category: "System".to_string(),
+                icon: "⏳".to_string(),
+                title: "Collecting Data".to_string(),
+                description: "Run the bot to collect opportunity data for AI optimization.".to_string(),
+                action: None,
+                impact: "low".to_string(),
+                confidence_percent: 0,
+            });
+        }
+    } else {
+        insights.push(AiInsight {
+            category: "System".to_string(),
+            icon: "⚠️".to_string(),
+            title: "Logger Not Initialized".to_string(),
+            description: "The opportunity logger hasn't started yet. Restart the bot.".to_string(),
+            action: None,
+            impact: "low".to_string(),
+            confidence_percent: 0,
+        });
+    }
+
+    let response = AiInsightsResponse {
+        generated_at: now.format("%Y-%m-%d %H:%M:%S UTC").to_string(),
+        auto_optimize_enabled,
+        insights,
+        performance_by_category: performance,
+        top_recommendation: top_rec,
+        summary,
+    };
+
+    Json(response)
+}
+
+/// POST /api/ai-optimize - Toggle auto-optimization
+async fn toggle_auto_optimize(
+    Json(payload): Json<serde_json::Value>,
+) -> impl IntoResponse {
+    use crate::ml_optimizer::get_ml_optimizer;
+
+    let enabled = payload.get("enabled").and_then(|v| v.as_bool()).unwrap_or(false);
+
+    if let Some(optimizer) = get_ml_optimizer() {
+        optimizer.set_auto_optimize(enabled);
+        optimizer.save();
+        (StatusCode::OK, format!("Auto-optimize {}", if enabled { "enabled" } else { "disabled" }))
+    } else {
+        (StatusCode::INTERNAL_SERVER_ERROR, "ML optimizer not initialized".to_string())
+    }
+}
+
 /// GET /
 async fn serve_dashboard() -> Html<&'static str> {
     Html(DASHBOARD_HTML)
@@ -806,6 +996,8 @@ pub async fn run_web_server(config: Arc<RwLock<RuntimeConfig>>) {
         .route("/api/positions", get(get_positions))
         .route("/api/insights", get(get_insights))
         .route("/api/simulation", get(get_simulation))
+        .route("/api/ai-insights", get(get_ai_insights))
+        .route("/api/ai-optimize", post(toggle_auto_optimize))
         .route("/api/restart", post(trigger_restart))
         .with_state(state);
 
@@ -1385,20 +1577,94 @@ const DASHBOARD_HTML: &str = r##"<!DOCTYPE html>
 
         <!-- Insights Tab -->
         <div id="tab-insights" class="tab-content">
-            <div class="section">
-                <div class="section-title">Bot Insights</div>
-                <div id="insights-messages" style="margin-bottom: 20px;">
-                    <div style="color: #8b949e; padding: 20px; text-align: center;">Loading insights...</div>
+            <!-- AI Top Recommendation -->
+            <div class="section" id="ai-top-rec-section" style="display:none;">
+                <div class="section-title">🧠 AI Top Recommendation</div>
+                <div id="ai-top-recommendation" style="background: linear-gradient(135deg, #238636 0%, #2ea043 100%); border-radius: 8px; padding: 20px; color: white;">
                 </div>
             </div>
+
+            <!-- AI Daily Summary -->
             <div class="section">
-                <div class="section-title">Threshold Comparison (Why Original Bot Found More?)</div>
-                <div id="simulation-content" style="display: flex; flex-direction: column; gap: 12px;">
-                    <div style="color: #8b949e; padding: 20px; text-align: center;">Loading comparison...</div>
-                </div>
-                <div id="simulation-recommendation" style="margin-top: 16px; padding: 12px; background: #21262d; border-radius: 8px; border-left: 3px solid #58a6ff; display: none;">
+                <div class="section-title">📊 Daily Summary</div>
+                <div id="ai-summary" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px;">
+                    <div class="metric-card">
+                        <div class="metric-value" id="ai-total-opps">0</div>
+                        <div class="metric-label">Opportunities Scanned</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-value positive" id="ai-executed">0</div>
+                        <div class="metric-label">Trades Executed</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-value warning" id="ai-missed">0</div>
+                        <div class="metric-label">Missed Opportunities</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-value positive" id="ai-profit">$0</div>
+                        <div class="metric-label">Actual Profit</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-value warning" id="ai-missed-profit">$0</div>
+                        <div class="metric-label">Missed Profit</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-value" id="ai-peak-hour">N/A</div>
+                        <div class="metric-label">Peak Activity</div>
+                    </div>
                 </div>
             </div>
+
+            <!-- AI Insights List -->
+            <div class="section">
+                <div class="section-title">💡 AI Optimization Insights</div>
+                <div id="ai-insights-list" style="display: flex; flex-direction: column; gap: 12px;">
+                    <div style="color: #8b949e; padding: 20px; text-align: center;">Loading AI insights...</div>
+                </div>
+            </div>
+
+            <!-- Performance by Category -->
+            <div class="section">
+                <div class="section-title">📈 Performance by Market Category</div>
+                <div id="ai-performance-table" style="overflow-x: auto;">
+                    <table class="trade-table">
+                        <thead>
+                            <tr>
+                                <th>Category</th>
+                                <th>Current Threshold</th>
+                                <th>Recommended</th>
+                                <th>Trades</th>
+                                <th>Missed</th>
+                                <th>Profit</th>
+                                <th>Missed $</th>
+                                <th>Confidence</th>
+                            </tr>
+                        </thead>
+                        <tbody id="ai-performance-body">
+                            <tr><td colspan="8" style="text-align:center;color:#8b949e">Collecting data...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Auto-Optimize Status -->
+            <div class="section">
+                <div class="section-title">⚙️ Auto-Optimization Status</div>
+                <div id="auto-optimize-status" style="display: flex; align-items: center; gap: 16px; padding: 16px; background: #21262d; border-radius: 8px;">
+                    <div style="flex: 1;">
+                        <div style="font-weight: 600; color: #f0f6fc; margin-bottom: 4px;">
+                            AI Auto-Optimize: <span id="auto-opt-status" style="color: #f85149;">OFF</span>
+                        </div>
+                        <div style="font-size: 12px; color: #8b949e;">
+                            When enabled, AI automatically adjusts thresholds per sport/market to maximize daily profit.
+                            Only guardrail: trades must be profitable after fees.
+                        </div>
+                    </div>
+                    <button id="toggle-auto-opt" class="btn" onclick="toggleAutoOptimize()">Enable</button>
+                </div>
+            </div>
+
+            <!-- Markets Tracked (moved to bottom) -->
             <div class="section">
                 <div class="section-title" id="markets-title">Markets Tracked (0)</div>
                 <div id="markets-grouped" style="display: flex; flex-direction: column; gap: 16px;">
@@ -1508,6 +1774,7 @@ const DASHBOARD_HTML: &str = r##"<!DOCTYPE html>
             'dry_run': 'trading-settings',
             'priority_mode': 'trading-settings',
             'crypto_enabled': 'trading-settings',
+            'auto_optimize': 'trading-settings',
             'min_liquidity_cents': 'circuit-settings',
             'max_daily_loss_cents': 'circuit-settings',
             'max_position_size_cents': 'circuit-settings',
@@ -1537,7 +1804,7 @@ const DASHBOARD_HTML: &str = r##"<!DOCTYPE html>
             document.getElementById('content').style.display = 'none';
 
             try {
-                const [configRes, metaRes, statusRes, analyticsRes, tradesRes, positionsRes, insightsRes, simulationRes] = await Promise.all([
+                const [configRes, metaRes, statusRes, analyticsRes, tradesRes, positionsRes, insightsRes, aiInsightsRes] = await Promise.all([
                     fetch('/api/config'),
                     fetch('/api/meta'),
                     fetch('/api/status'),
@@ -1545,7 +1812,7 @@ const DASHBOARD_HTML: &str = r##"<!DOCTYPE html>
                     fetch('/api/trades'),
                     fetch('/api/positions'),
                     fetch('/api/insights'),
-                    fetch('/api/simulation')
+                    fetch('/api/ai-insights')
                 ]);
 
                 config = await configRes.json();
@@ -1555,14 +1822,14 @@ const DASHBOARD_HTML: &str = r##"<!DOCTYPE html>
                 const trades = await tradesRes.json();
                 const positions = await positionsRes.json();
                 const insights = await insightsRes.json();
-                const simulation = await simulationRes.json();
+                const aiInsights = await aiInsightsRes.json();
 
                 updateStatus(status);
                 updateAnalytics(analytics);
                 updateTrades(trades);
                 updatePositions(positions);
                 updateInsights(insights);
-                updateSimulation(simulation);
+                updateAiInsights(aiInsights);
                 renderSettings();
 
                 document.getElementById('content').style.display = 'block';
@@ -1573,16 +1840,6 @@ const DASHBOARD_HTML: &str = r##"<!DOCTYPE html>
         }
 
         function updateInsights(data) {
-            // Update insights messages
-            const messagesDiv = document.getElementById('insights-messages');
-            if (data.insights && data.insights.length > 0) {
-                messagesDiv.innerHTML = data.insights.map(msg =>
-                    `<div style="background:#21262d;padding:12px 16px;border-radius:8px;margin-bottom:8px;font-size:14px;">${msg}</div>`
-                ).join('');
-            } else {
-                messagesDiv.innerHTML = '<div style="color:#8b949e;padding:20px;text-align:center;">No insights available yet</div>';
-            }
-
             // Update markets title
             document.getElementById('markets-title').textContent = `Markets Tracked (${data.total_markets || 0})`;
 
@@ -1601,6 +1858,131 @@ const DASHBOARD_HTML: &str = r##"<!DOCTYPE html>
                 ).join('');
             } else {
                 marketsDiv.innerHTML = '<div style="color:#8b949e;padding:20px;text-align:center;">No markets tracked yet - trades will appear here</div>';
+            }
+        }
+
+        function updateAiInsights(data) {
+            // Update summary stats
+            document.getElementById('ai-total-opps').textContent = data.summary.total_opportunities;
+            document.getElementById('ai-executed').textContent = data.summary.executed_trades;
+            document.getElementById('ai-missed').textContent = data.summary.missed_opportunities;
+            document.getElementById('ai-profit').textContent = formatCents(data.summary.total_profit_cents);
+            document.getElementById('ai-missed-profit').textContent = formatCents(data.summary.missed_profit_cents);
+            document.getElementById('ai-peak-hour').textContent = data.summary.peak_hour;
+
+            // Update auto-optimize status
+            const statusSpan = document.getElementById('auto-opt-status');
+            const toggleBtn = document.getElementById('toggle-auto-opt');
+            if (data.auto_optimize_enabled) {
+                statusSpan.textContent = 'ON';
+                statusSpan.style.color = '#3fb950';
+                toggleBtn.textContent = 'Disable';
+                toggleBtn.classList.add('btn-danger');
+                toggleBtn.classList.remove('btn');
+            } else {
+                statusSpan.textContent = 'OFF';
+                statusSpan.style.color = '#f85149';
+                toggleBtn.textContent = 'Enable';
+                toggleBtn.classList.remove('btn-danger');
+                toggleBtn.classList.add('btn');
+            }
+
+            // Update top recommendation
+            const topRecSection = document.getElementById('ai-top-rec-section');
+            const topRecDiv = document.getElementById('ai-top-recommendation');
+            if (data.top_recommendation) {
+                topRecSection.style.display = 'block';
+                topRecDiv.innerHTML = `
+                    <div style="font-size:18px;font-weight:700;margin-bottom:8px;">${data.top_recommendation.title}</div>
+                    <div style="font-size:14px;margin-bottom:12px;">${data.top_recommendation.description}</div>
+                    <div style="display:flex;justify-content:space-between;align-items:center;">
+                        <div style="background:rgba(255,255,255,0.2);padding:8px 16px;border-radius:6px;font-size:13px;">
+                            💰 Potential: <strong>${formatCents(data.top_recommendation.potential_gain_cents)}/day</strong>
+                        </div>
+                        <div style="font-size:12px;opacity:0.8;">
+                            Confidence: ${data.top_recommendation.confidence_percent}%
+                        </div>
+                    </div>
+                    <div style="margin-top:12px;font-size:13px;background:rgba(0,0,0,0.2);padding:10px;border-radius:6px;">
+                        <strong>Action:</strong> ${data.top_recommendation.action}
+                    </div>
+                `;
+            } else {
+                topRecSection.style.display = 'none';
+            }
+
+            // Update AI insights list
+            const insightsList = document.getElementById('ai-insights-list');
+            if (data.insights && data.insights.length > 0) {
+                insightsList.innerHTML = data.insights.map(insight => {
+                    const impactColor = insight.impact === 'high' ? '#f85149' : insight.impact === 'medium' ? '#d29922' : '#8b949e';
+                    return `<div style="background:#21262d;border-radius:8px;padding:16px;border-left:3px solid ${impactColor};">
+                        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;">
+                            <div style="font-weight:600;color:#f0f6fc;font-size:15px;">
+                                ${insight.icon} ${insight.title}
+                            </div>
+                            <span style="font-size:11px;color:#8b949e;background:#161b22;padding:2px 8px;border-radius:10px;">
+                                ${insight.category}
+                            </span>
+                        </div>
+                        <div style="color:#c9d1d9;font-size:13px;line-height:1.5;">
+                            ${insight.description}
+                        </div>
+                        ${insight.action ? `<div style="margin-top:10px;font-size:12px;color:#58a6ff;">
+                            💡 ${insight.action}
+                        </div>` : ''}
+                        ${insight.confidence_percent > 0 ? `<div style="margin-top:8px;font-size:11px;color:#8b949e;">
+                            Confidence: ${insight.confidence_percent}%
+                        </div>` : ''}
+                    </div>`;
+                }).join('');
+            } else {
+                insightsList.innerHTML = '<div style="color:#8b949e;padding:20px;text-align:center;">Run the bot to collect data for AI insights</div>';
+            }
+
+            // Update performance table
+            const perfBody = document.getElementById('ai-performance-body');
+            if (data.performance_by_category && data.performance_by_category.length > 0) {
+                perfBody.innerHTML = data.performance_by_category.map(p => {
+                    const needsChange = p.recommended_threshold !== p.current_threshold;
+                    const icon = p.category.sport === 'NFL' ? '🏈' : p.category.sport === 'NBA' ? '🏀' :
+                                 p.category.sport === 'MLB' ? '⚾' : p.category.sport === 'NHL' ? '🏒' :
+                                 p.category.sport === 'Crypto' ? '₿' : '📊';
+                    return `<tr>
+                        <td>${icon} ${p.category.sport} ${p.category.bet_type}</td>
+                        <td>${p.current_threshold}¢</td>
+                        <td style="color:${needsChange ? '#d29922' : '#3fb950'}">${p.recommended_threshold}¢${needsChange ? ' ⚡' : ''}</td>
+                        <td class="profit-positive">${p.trades_executed}</td>
+                        <td class="profit-negative">${p.trades_missed}</td>
+                        <td class="profit-positive">${formatCents(p.profit_cents)}</td>
+                        <td class="profit-negative">${formatCents(p.missed_profit_cents)}</td>
+                        <td>${(p.confidence * 100).toFixed(0)}%</td>
+                    </tr>`;
+                }).join('');
+            } else {
+                perfBody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:#8b949e">Collecting data...</td></tr>';
+            }
+        }
+
+        async function toggleAutoOptimize() {
+            const statusSpan = document.getElementById('auto-opt-status');
+            const currentlyEnabled = statusSpan.textContent === 'ON';
+
+            try {
+                const res = await fetch('/api/ai-optimize', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ enabled: !currentlyEnabled })
+                });
+
+                if (res.ok) {
+                    showStatus(`Auto-optimize ${currentlyEnabled ? 'disabled' : 'enabled'}`, 'success');
+                    loadAll(); // Refresh all data
+                } else {
+                    showStatus('Failed to toggle auto-optimize', 'error');
+                }
+            } catch (e) {
+                showStatus('Error: ' + e.message, 'error');
             }
         }
 

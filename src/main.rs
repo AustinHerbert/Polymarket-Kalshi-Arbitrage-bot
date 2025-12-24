@@ -31,6 +31,7 @@ mod discovery;
 mod execution;
 mod kalshi;
 mod metrics;
+mod ml_optimizer;
 mod opportunity_log;
 mod polymarket;
 mod polymarket_clob;
@@ -121,8 +122,18 @@ async fn main() -> Result<()> {
         .unwrap_or(10000) * 100; // Default $100, convert to cents
     trade_log::init_trade_logger("./dashboard_data", dry_run, bankroll_cents);
     opportunity_log::init_opportunity_logger("./dashboard_data");
+
+    // Initialize ML optimizer for per-market threshold optimization
+    let ml_optimizer = ml_optimizer::init_ml_optimizer("./dashboard_data");
+    let auto_optimize = std::env::var("AUTO_OPTIMIZE")
+        .map(|v| v == "1" || v.to_lowercase() == "true")
+        .unwrap_or(false);
+    ml_optimizer.set_auto_optimize(auto_optimize);
+
     info!("   Dashboard: ENABLED (data in ./dashboard_data/)");
     info!("   Opportunity Scanner: ENABLED (logging near-misses for optimization)");
+    info!("   ML Optimizer: {} (adjusts thresholds per market to maximize profit)",
+          if auto_optimize { "AUTO" } else { "MANUAL" });
     info!("   Bankroll: ${:.2}", bankroll_cents as f64 / 100.0);
 
     // Load Kalshi credentials
@@ -479,6 +490,7 @@ async fn main() -> Result<()> {
     let heartbeat_handle = tokio::spawn(async move {
         use crate::types::kalshi_fee_cents;
         use crate::opportunity_log::{get_opportunity_logger, create_opportunity};
+        use crate::ml_optimizer::get_ml_optimizer;
         let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(60));
         loop {
             interval.tick().await;
@@ -489,6 +501,11 @@ async fn main() -> Result<()> {
             let mut near_misses = 0;
             // Track best arbitrage opportunity: (total_cost, market_id, p_yes, k_no, k_yes, p_no, fee, is_poly_yes_kalshi_no)
             let mut best_arb: Option<(u16, u16, u16, u16, u16, u16, u16, bool)> = None;
+
+            // Check if ML optimizer is in auto mode
+            let ml_auto = get_ml_optimizer()
+                .map(|opt| opt.is_auto_optimize_enabled())
+                .unwrap_or(false);
 
             for market in heartbeat_state.markets.iter().take(market_count) {
                 let (k_yes, k_no, k_yes_size, k_no_size) = market.kalshi.load();
@@ -512,20 +529,33 @@ async fn main() -> Result<()> {
                         (cost2, fee2, false)
                     };
 
+                    // Get market description for ML optimizer
+                    let desc = heartbeat_state.get_by_id(market.market_id)
+                        .and_then(|m| m.pair.as_ref())
+                        .map(|p| p.description.to_string())
+                        .unwrap_or_else(|| format!("Market_{}", market.market_id));
+
+                    // Get per-market threshold if ML optimizer is enabled
+                    let effective_threshold = if ml_auto {
+                        get_ml_optimizer()
+                            .map(|opt| opt.get_threshold(&desc))
+                            .unwrap_or(heartbeat_threshold)
+                    } else {
+                        heartbeat_threshold
+                    };
+
                     // Log near-misses (within 5¢ of threshold) to opportunity logger
-                    let gap = best_cost as i16 - heartbeat_threshold as i16;
+                    let gap = best_cost as i16 - effective_threshold as i16;
                     if gap <= 5 && gap > -10 {
                         near_misses += 1;
-                        let desc = heartbeat_state.get_by_id(market.market_id)
-                            .and_then(|m| m.pair.as_ref())
-                            .map(|p| p.description.to_string())
-                            .unwrap_or_else(|| format!("Market_{}", market.market_id));
 
                         // Calculate liquidity
                         let yes_liq = (p_yes_size + k_yes_size) as u16;
                         let no_liq = (p_no_size + k_no_size) as u16;
+                        let min_liq = yes_liq.min(no_liq);
 
                         let was_executed = gap < 0; // Below threshold = would execute
+                        let profit_cents = if was_executed { (100 - best_cost) as i16 } else { 0 };
                         let rejection = if gap >= 0 {
                             Some(format!("Gap {}¢ above threshold", gap))
                         } else {
@@ -547,6 +577,17 @@ async fn main() -> Result<()> {
                             );
                             logger.log_opportunity(opp);
                         }
+
+                        // Record observation to ML optimizer
+                        if let Some(optimizer) = get_ml_optimizer() {
+                            optimizer.record_observation(
+                                &desc,
+                                best_cost,
+                                min_liq as u32 * 100, // Convert to cents
+                                was_executed,
+                                profit_cents,
+                            );
+                        }
                     }
 
                     if best_arb.is_none() || best_cost < best_arb.as_ref().unwrap().0 {
@@ -563,8 +604,19 @@ async fn main() -> Result<()> {
                 }
             }
 
-            info!("💓 System heartbeat | Markets: {} total, {} with Kalshi prices, {} with Polymarket prices, {} with both | threshold={}¢",
-                  market_count, with_kalshi, with_poly, with_both, heartbeat_threshold);
+            // Log ML optimizer status
+            if ml_auto {
+                if let Some(optimizer) = get_ml_optimizer() {
+                    let settings = optimizer.get_all_settings();
+                    if !settings.is_empty() {
+                        info!("   🧠 ML Auto-Optimize: {} category thresholds learned", settings.len());
+                    }
+                }
+            }
+
+            info!("💓 System heartbeat | Markets: {} total, {} with Kalshi prices, {} with Polymarket prices, {} with both | threshold={}¢{}",
+                  market_count, with_kalshi, with_poly, with_both, heartbeat_threshold,
+                  if ml_auto { " (ML per-market)" } else { "" });
 
             if let Some((cost, market_id, p_yes, k_no, k_yes, p_no, fee, is_poly_yes)) = best_arb {
                 let gap = cost as i16 - heartbeat_threshold as i16;

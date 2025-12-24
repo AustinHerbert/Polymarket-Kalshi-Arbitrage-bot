@@ -10,6 +10,8 @@ use std::fs::{self, OpenOptions};
 use std::io::{BufWriter, Write};
 use std::path::Path;
 
+use crate::ml_optimizer::{MarketCategory, OpportunityData};
+
 /// Maximum opportunities to keep in memory
 const MAX_OPPORTUNITIES: usize = 10000;
 
@@ -19,6 +21,9 @@ pub struct ScannedOpportunity {
     pub timestamp: String,
     pub market_id: u16,
     pub market_name: String,
+    /// Parsed category for ML optimization
+    pub sport: String,
+    pub bet_type: String,
     /// Raw prices before any adjustments
     pub kalshi_yes: u16,
     pub kalshi_no: u16,
@@ -270,6 +275,30 @@ impl OpportunityLogger {
     pub fn count(&self) -> usize {
         self.opportunities.lock().len()
     }
+
+    /// Get opportunities as OpportunityData for ML optimizer
+    pub fn get_opportunity_data(&self) -> Vec<OpportunityData> {
+        let opps = self.opportunities.lock();
+        opps.iter().map(|opp| OpportunityData {
+            timestamp: opp.timestamp.clone(),
+            market_name: opp.market_name.clone(),
+            adjusted_cost_cents: opp.adjusted_total_cents,
+            liquidity_cents: opp.min_liquidity_cents as u32,
+            was_executed: opp.was_executed,
+        }).collect()
+    }
+
+    /// Get opportunities grouped by sport
+    pub fn get_by_sport(&self) -> std::collections::HashMap<String, Vec<ScannedOpportunity>> {
+        let opps = self.opportunities.lock();
+        let mut by_sport: std::collections::HashMap<String, Vec<ScannedOpportunity>> = std::collections::HashMap::new();
+
+        for opp in opps.iter() {
+            by_sport.entry(opp.sport.clone()).or_default().push(opp.clone());
+        }
+
+        by_sport
+    }
 }
 
 // Global opportunity logger
@@ -310,6 +339,9 @@ pub fn create_opportunity(
     was_executed: bool,
     rejection_reason: Option<&str>,
 ) -> ScannedOpportunity {
+    // Parse market category
+    let category = MarketCategory::from_market_name(market_name);
+
     // Calculate best combination
     let k_yes_fee = kalshi_fee(kalshi_yes);
     let k_no_fee = kalshi_fee(kalshi_no);
@@ -342,6 +374,8 @@ pub fn create_opportunity(
         timestamp: chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string(),
         market_id,
         market_name: market_name.to_string(),
+        sport: category.sport,
+        bet_type: category.bet_type,
         kalshi_yes,
         kalshi_no,
         poly_yes,
