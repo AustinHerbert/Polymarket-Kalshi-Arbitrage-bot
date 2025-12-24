@@ -264,24 +264,6 @@ fn get_settings_meta() -> Vec<SettingMeta> {
             max: None,
         },
         SettingMeta {
-            key: "priority_mode",
-            label: "Priority Mode",
-            description: "Smart queue sorting by profit, liquidity, and expiration time",
-            setting_type: "toggle",
-            requires_restart: true,
-            min: None,
-            max: None,
-        },
-        SettingMeta {
-            key: "crypto_enabled",
-            label: "Crypto Markets",
-            description: "Enable BTC/ETH crypto market discovery and trading",
-            setting_type: "toggle",
-            requires_restart: true,
-            min: None,
-            max: None,
-        },
-        SettingMeta {
             key: "auto_optimize",
             label: "AI Auto-Optimize",
             description: "AI adjusts thresholds per sport/market to maximize daily profit. Only guardrail: must be profitable after fees.",
@@ -1734,8 +1716,6 @@ const DASHBOARD_HTML: &str = r##"<!DOCTYPE html>
         const sections = {
             'arb_threshold_cents': 'trading-settings',
             'dry_run': 'trading-settings',
-            'priority_mode': 'trading-settings',
-            'crypto_enabled': 'trading-settings',
             'auto_optimize': 'trading-settings',
             'min_liquidity_cents': 'circuit-settings',
             'max_daily_loss_cents': 'circuit-settings',
