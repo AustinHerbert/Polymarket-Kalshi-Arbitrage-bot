@@ -1,0 +1,42 @@
+[package]
+name = "trading-core"
+version.workspace = true
+edition.workspace = true
+description = "Shared infrastructure for Polymarket/Kalshi trading bots"
+
+[dependencies]
+# Async
+tokio.workspace = true
+futures-util.workspace = true
+
+# HTTP & WebSocket
+reqwest.workspace = true
+tokio-tungstenite.workspace = true
+
+# Serialization
+serde.workspace = true
+serde_json.workspace = true
+
+# Crypto
+ethers.workspace = true
+hmac.workspace = true
+sha2.workspace = true
+rsa.workspace = true
+pkcs1.workspace = true
+tiny-keccak.workspace = true
+
+# Utilities
+anyhow.workspace = true
+base64.workspace = true
+chrono.workspace = true
+dotenvy.workspace = true
+rand.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+
+# Performance
+rustc-hash.workspace = true
+governor.workspace = true
+nonzero_ext.workspace = true
+arrayvec.workspace = true
+wide.workspace = true

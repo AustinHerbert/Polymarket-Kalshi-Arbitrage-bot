@@ -1,0 +1,22 @@
+[package]
+name = "dashboard"
+version.workspace = true
+edition.workspace = true
+description = "Unified dashboard for monitoring trading bots"
+
+[[bin]]
+name = "dashboard"
+path = "src/main.rs"
+
+[dependencies]
+trading-core.workspace = true
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+
+# Web server
+axum = "0.7"
+tower-http = { version = "0.5", features = ["cors", "fs"] }
