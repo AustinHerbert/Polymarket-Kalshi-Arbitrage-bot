@@ -13,11 +13,11 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::Semaphore;
 use tracing::{info, warn};
 
-use crate::cache::TeamCache;
-use crate::config::{LeagueConfig, get_league_configs, get_league_config};
-use crate::kalshi::KalshiApiClient;
-use crate::polymarket::GammaClient;
-use crate::types::{MarketPair, MarketType, DiscoveryResult, KalshiMarket, KalshiEvent};
+use trading_core::cache::TeamCache;
+use trading_core::config::{LeagueConfig, get_league_configs, get_league_config};
+use trading_core::kalshi::KalshiApiClient;
+use trading_core::polymarket::GammaClient;
+use trading_core::types::{MarketPair, MarketType, DiscoveryResult, KalshiMarket, KalshiEvent};
 
 /// Max concurrent Gamma API requests
 const GAMMA_CONCURRENCY: usize = 20;

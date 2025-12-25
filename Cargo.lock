@@ -61,6 +61,7 @@ dependencies = [
  "chrono",
  "dotenvy",
  "futures-util",
+ "governor",
  "serde",
  "serde_json",
  "tokio",

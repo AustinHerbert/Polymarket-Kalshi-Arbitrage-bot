@@ -22,31 +22,28 @@
 //! - **Circuit breaker protection** with configurable risk limits
 //! - **Market discovery system** with intelligent caching and incremental updates
 
-mod cache;
 mod circuit_breaker;
-mod config;
 mod discovery;
 mod execution;
-mod kalshi;
-mod polymarket;
-mod polymarket_clob;
 mod position_tracker;
-mod types;
 
 use anyhow::{Context, Result};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::{error, info, warn};
 
-use cache::TeamCache;
+// Import shared modules from trading-core
+use trading_core::cache::TeamCache;
+use trading_core::config::{ARB_THRESHOLD, ENABLED_LEAGUES, WS_RECONNECT_DELAY_SECS};
+use trading_core::kalshi::{KalshiConfig, KalshiApiClient};
+use trading_core::polymarket_clob::{PolymarketAsyncClient, PreparedCreds, SharedAsyncClient};
+use trading_core::types::{GlobalState, PriceCents, kalshi_fee_cents, FastExecutionRequest, ArbType};
+
+// Local arb-bot specific modules
 use circuit_breaker::{CircuitBreaker, CircuitBreakerConfig};
-use config::{ARB_THRESHOLD, ENABLED_LEAGUES, WS_RECONNECT_DELAY_SECS};
 use discovery::DiscoveryClient;
 use execution::{ExecutionEngine, create_execution_channel, run_execution_loop};
-use kalshi::{KalshiConfig, KalshiApiClient};
-use polymarket_clob::{PolymarketAsyncClient, PreparedCreds, SharedAsyncClient};
 use position_tracker::{PositionTracker, create_position_channel, position_writer_loop};
-use types::{GlobalState, PriceCents};
 
 /// Polymarket CLOB API host
 const POLY_CLOB_HOST: &str = "https://clob.polymarket.com";
@@ -201,7 +198,7 @@ async fn main() -> Result<()> {
         let arb_type_str = std::env::var("TEST_ARB_TYPE").unwrap_or_else(|_| "poly_yes_kalshi_no".to_string());
 
         tokio::spawn(async move {
-            use types::{FastExecutionRequest, ArbType};
+            // Types already imported at top level
 
             // Wait for WebSocket connections to establish and populate orderbooks
             info!("[TEST] Injecting synthetic arbitrage opportunity in 10 seconds...");
@@ -266,7 +263,7 @@ async fn main() -> Result<()> {
     let kalshi_ws_config = KalshiConfig::from_env()?;
     let kalshi_handle = tokio::spawn(async move {
         loop {
-            if let Err(e) = kalshi::run_ws(&kalshi_ws_config, kalshi_state.clone(), kalshi_exec_tx.clone(), kalshi_threshold).await {
+            if let Err(e) = trading_core::kalshi::run_ws(&kalshi_ws_config, kalshi_state.clone(), kalshi_exec_tx.clone(), kalshi_threshold).await {
                 error!("[KALSHI] WebSocket disconnected: {} - reconnecting...", e);
             }
             tokio::time::sleep(tokio::time::Duration::from_secs(WS_RECONNECT_DELAY_SECS)).await;
@@ -279,7 +276,7 @@ async fn main() -> Result<()> {
     let poly_threshold = threshold_cents;
     let poly_handle = tokio::spawn(async move {
         loop {
-            if let Err(e) = polymarket::run_ws(poly_state.clone(), poly_exec_tx.clone(), poly_threshold).await {
+            if let Err(e) = trading_core::polymarket::run_ws(poly_state.clone(), poly_exec_tx.clone(), poly_threshold).await {
                 error!("[POLYMARKET] WebSocket disconnected: {} - reconnecting...", e);
             }
             tokio::time::sleep(tokio::time::Duration::from_secs(WS_RECONNECT_DELAY_SECS)).await;
@@ -290,7 +287,7 @@ async fn main() -> Result<()> {
     let heartbeat_state = state.clone();
     let heartbeat_threshold = threshold_cents;
     let heartbeat_handle = tokio::spawn(async move {
-        use crate::types::kalshi_fee_cents;
+        // kalshi_fee_cents imported at top level from trading_core::types
         let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(60));
         loop {
             interval.tick().await;

@@ -10,9 +10,9 @@ use std::time::{Duration, Instant};
 use tokio::sync::mpsc;
 use tracing::{info, warn, error};
 
-use crate::kalshi::KalshiApiClient;
-use crate::polymarket_clob::SharedAsyncClient;
-use crate::types::{
+use trading_core::kalshi::KalshiApiClient;
+use trading_core::polymarket_clob::SharedAsyncClient;
+use trading_core::types::{
     ArbType, MarketPair,
     FastExecutionRequest, GlobalState,
     cents_to_price,
@@ -366,8 +366,8 @@ impl ExecutionEngine {
     /// Extract results from cross-platform execution
     fn extract_cross_results(
         &self,
-        kalshi_res: Result<crate::kalshi::KalshiOrderResponse>,
-        poly_res: Result<crate::polymarket_clob::PolyFillAsync>,
+        kalshi_res: Result<trading_core::kalshi::KalshiOrderResponse>,
+        poly_res: Result<trading_core::polymarket_clob::PolyFillAsync>,
     ) -> Result<(i64, i64, i64, i64, String, String)> {
         let (kalshi_filled, kalshi_cost, kalshi_order_id) = match kalshi_res {
             Ok(resp) => {
@@ -397,8 +397,8 @@ impl ExecutionEngine {
     /// Extract results from Poly-only execution (same-platform)
     fn extract_poly_only_results(
         &self,
-        yes_res: Result<crate::polymarket_clob::PolyFillAsync>,
-        no_res: Result<crate::polymarket_clob::PolyFillAsync>,
+        yes_res: Result<trading_core::polymarket_clob::PolyFillAsync>,
+        no_res: Result<trading_core::polymarket_clob::PolyFillAsync>,
     ) -> Result<(i64, i64, i64, i64, String, String)> {
         let (yes_filled, yes_cost, yes_order_id) = match yes_res {
             Ok(fill) => {
@@ -428,8 +428,8 @@ impl ExecutionEngine {
     /// Extract results from Kalshi-only execution (same-platform)
     fn extract_kalshi_only_results(
         &self,
-        yes_res: Result<crate::kalshi::KalshiOrderResponse>,
-        no_res: Result<crate::kalshi::KalshiOrderResponse>,
+        yes_res: Result<trading_core::kalshi::KalshiOrderResponse>,
+        no_res: Result<trading_core::kalshi::KalshiOrderResponse>,
     ) -> Result<(i64, i64, i64, i64, String, String)> {
         let (yes_filled, yes_cost, yes_order_id) = match yes_res {
             Ok(resp) => {
