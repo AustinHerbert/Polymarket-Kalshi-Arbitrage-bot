@@ -203,13 +203,24 @@ pub struct TradeDisplay {
     pub arb_type: String,
     pub profit_cents: i64,
     pub volume_cents: u64,
+    pub contracts: i64,
     pub status: String,
     pub latency_ms: f64,
     /// When the event expires/settles (Unix timestamp seconds)
     pub event_expires_at: Option<u64>,
     /// Whether the event has settled
     pub is_settled: bool,
+    /// Number of individual trades batched into this display
+    #[serde(default = "default_batch_count")]
+    pub batch_count: u32,
+    /// Prices in cents for batching key
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub yes_price_cents: Option<u16>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub no_price_cents: Option<u16>,
 }
+
+fn default_batch_count() -> u32 { 1 }
 
 /// Open position for display
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -418,6 +429,7 @@ async fn get_analytics() -> impl IntoResponse {
 }
 
 /// GET /api/trades
+/// Returns trades batched by market + arb_type + price level
 async fn get_trades() -> impl IntoResponse {
     let trades_path = "./dashboard_data/trades.json";
 
@@ -429,9 +441,9 @@ async fn get_trades() -> impl IntoResponse {
 
     let trades: Vec<TradeDisplay> = if let Ok(content) = std::fs::read_to_string(trades_path) {
         if let Ok(all_trades) = serde_json::from_str::<Vec<serde_json::Value>>(&content) {
-            all_trades.iter().rev().take(50).map(|t| {
+            // First, parse all trades into TradeDisplay
+            let raw_trades: Vec<TradeDisplay> = all_trades.iter().map(|t| {
                 let event_expires_at = t.get("event_expires_at").and_then(|v| v.as_u64());
-                // Check is_settled from file, or compute from expiration time
                 let is_settled = t.get("is_settled").and_then(|v| v.as_bool())
                     .unwrap_or_else(|| event_expires_at.map(|exp| now_secs >= exp).unwrap_or(false));
 
@@ -442,12 +454,60 @@ async fn get_trades() -> impl IntoResponse {
                     arb_type: t.get("arb_type").and_then(|v| v.as_str()).unwrap_or("").to_string(),
                     profit_cents: t.get("profit_cents").and_then(|v| v.as_i64()).unwrap_or(0),
                     volume_cents: t.get("volume_cents").and_then(|v| v.as_u64()).unwrap_or(0),
+                    contracts: t.get("contracts").and_then(|v| v.as_i64()).unwrap_or(1),
                     status: t.get("status").and_then(|v| v.as_str()).unwrap_or("unknown").to_string(),
                     latency_ms: t.get("latency_ms").and_then(|v| v.as_f64()).unwrap_or(0.0),
                     event_expires_at,
                     is_settled,
+                    batch_count: 1,
+                    yes_price_cents: t.get("yes_price_cents").and_then(|v| v.as_u64()).map(|v| v as u16),
+                    no_price_cents: t.get("no_price_cents").and_then(|v| v.as_u64()).map(|v| v as u16),
                 }
-            }).collect()
+            }).collect();
+
+            // Batch trades by (market_name, arb_type, yes_price, no_price)
+            // Key format: "market_name|arb_type|yes_price|no_price"
+            let mut batched: std::collections::HashMap<String, TradeDisplay> = std::collections::HashMap::new();
+
+            for trade in raw_trades {
+                let batch_key = format!(
+                    "{}|{}|{}|{}",
+                    trade.market_name,
+                    trade.arb_type,
+                    trade.yes_price_cents.unwrap_or(0),
+                    trade.no_price_cents.unwrap_or(0)
+                );
+
+                batched.entry(batch_key)
+                    .and_modify(|existing| {
+                        // Aggregate values
+                        existing.profit_cents += trade.profit_cents;
+                        existing.volume_cents += trade.volume_cents;
+                        existing.contracts += trade.contracts;
+                        existing.batch_count += 1;
+                        // Keep earliest timestamp (first trade in batch)
+                        if trade.timestamp < existing.timestamp {
+                            existing.timestamp = trade.timestamp.clone();
+                            existing.id = trade.id;
+                        }
+                        // Use min latency (best case)
+                        if trade.latency_ms < existing.latency_ms {
+                            existing.latency_ms = trade.latency_ms;
+                        }
+                        // Update settled status if any settled
+                        if trade.is_settled {
+                            existing.is_settled = true;
+                        }
+                    })
+                    .or_insert(trade);
+            }
+
+            // Convert to vec and sort by most recent (highest id)
+            let mut result: Vec<TradeDisplay> = batched.into_values().collect();
+            result.sort_by(|a, b| b.id.cmp(&a.id));
+
+            // Take top 50 batched trades
+            result.into_iter().take(50).collect()
         } else {
             Vec::new()
         }
@@ -1821,7 +1881,7 @@ const DASHBOARD_HTML: &str = r##"<!DOCTYPE html>
         <!-- Trades Tab -->
         <div id="tab-trades" class="tab-content">
             <div class="section">
-                <div class="section-title">Trade History (Last 50)</div>
+                <div class="section-title">Trade History (Batched by Market & Price)</div>
                 <div class="table-scroll">
                     <table class="trade-table">
                         <thead>
@@ -1829,9 +1889,9 @@ const DASHBOARD_HTML: &str = r##"<!DOCTYPE html>
                                 <th>Time</th>
                                 <th>Market</th>
                                 <th>Type</th>
+                                <th>Contracts</th>
                                 <th>Profit</th>
                                 <th>Volume</th>
-                                <th>Latency</th>
                                 <th>Settlement</th>
                             </tr>
                         </thead>
@@ -2230,12 +2290,6 @@ const DASHBOARD_HTML: &str = r##"<!DOCTYPE html>
                     hour12: true
                 });
 
-                // Fix latency - convert ns to ms if too large
-                let latencyMs = t.latency_ms;
-                if (latencyMs > 60000) {
-                    latencyMs = latencyMs / 1000000;
-                }
-
                 const profitClass = t.profit_cents >= 0 ? 'profit-positive' : 'profit-negative';
 
                 // Determine settlement status
@@ -2264,13 +2318,20 @@ const DASHBOARD_HTML: &str = r##"<!DOCTYPE html>
                 // Prefix profit with ~ if not yet settled
                 const profitPrefix = !t.is_settled && t.event_expires_at ? '~' : '';
 
+                // Show contracts with batch count if multiple trades were combined
+                const contracts = t.contracts || 1;
+                const batchCount = t.batch_count || 1;
+                const contractsHtml = batchCount > 1
+                    ? `<span title="${batchCount} trades batched">${contracts} <small style="color:#8b949e">(${batchCount}x)</small></span>`
+                    : `${contracts}`;
+
                 return `<tr>
                     <td>${time}</td>
                     <td>${t.market_name.substring(0, 30)}</td>
                     <td>${t.arb_type}</td>
+                    <td>${contractsHtml}</td>
                     <td class="${profitClass}">${profitPrefix}${formatCents(t.profit_cents)}</td>
                     <td>${formatCents(t.volume_cents)}</td>
-                    <td>${latencyMs.toFixed(1)}ms</td>
                     <td>${settlementHtml}</td>
                 </tr>`;
             }).join('');

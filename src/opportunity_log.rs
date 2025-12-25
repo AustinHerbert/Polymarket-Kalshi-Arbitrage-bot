@@ -343,21 +343,25 @@ pub fn create_opportunity(
     was_executed: bool,
     rejection_reason: Option<&str>,
 ) -> ScannedOpportunity {
-    // Normalize league name for display
+    // Normalize league name for display - keep US sports separate, consolidate European soccer
     let sport = match league.to_lowercase().as_str() {
+        // US Sports - keep separate
         "nfl" => "NFL",
         "nba" => "NBA",
         "mlb" => "MLB",
         "nhl" => "NHL",
-        "epl" | "premier_league" | "premier-league" => "EPL",
-        "la_liga" | "laliga" | "la-liga" => "La Liga",
-        "serie_a" | "seriea" | "serie-a" => "Serie A",
-        "bundesliga" => "Bundesliga",
-        "ligue_1" | "ligue1" | "ligue-1" => "Ligue 1",
-        "champions_league" | "ucl" => "UCL",
-        "ncaaf" | "college_football" => "NCAAF",
-        "ncaab" | "college_basketball" => "NCAAB",
-        "crypto" | "btc" | "eth" => "Crypto",
+        "ncaaf" | "ncaab" | "ncaamb" | "ncaawb" | "college_football" | "college_basketball" => "NCAA",
+        "mls" => "MLS",
+        "wnba" => "WNBA",
+        // European soccer - consolidated into "Soccer"
+        "epl" | "premier_league" | "premier-league"
+        | "la_liga" | "laliga" | "la-liga"
+        | "serie_a" | "seriea" | "serie-a"
+        | "bundesliga"
+        | "ligue_1" | "ligue1" | "ligue-1"
+        | "champions_league" | "ucl" | "uel" | "efl" => "Soccer",
+        // Crypto
+        "crypto" | "btc" | "eth" | "sol" | "xrp" | "doge" => "Crypto",
         _ => league, // Keep original if not recognized
     }.to_string();
 

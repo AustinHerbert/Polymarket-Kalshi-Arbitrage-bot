@@ -154,29 +154,35 @@ impl TradeLogger {
         }
 
         // Load existing trades or start fresh
-        let (trades, next_id) = if Path::new(&trades_file).exists() {
+        let (trades, next_id, earliest_timestamp) = if Path::new(&trades_file).exists() {
             match fs::read_to_string(&trades_file) {
                 Ok(content) => {
                     match serde_json::from_str::<Vec<TradeRecord>>(&content) {
                         Ok(t) => {
                             let max_id = t.iter().map(|r| r.id).max().unwrap_or(0);
-                            (t, max_id + 1)
+                            // Get earliest timestamp from existing trades for proper stats
+                            let earliest = t.iter().map(|r| r.timestamp).min();
+                            (t, max_id + 1, earliest)
                         }
-                        Err(_) => (Vec::new(), 1)
+                        Err(_) => (Vec::new(), 1, None)
                     }
                 }
-                Err(_) => (Vec::new(), 1)
+                Err(_) => (Vec::new(), 1, None)
             }
         } else {
-            (Vec::new(), 1)
+            (Vec::new(), 1, None)
         };
+
+        // Use earliest trade timestamp if we have existing trades, otherwise use now
+        // This ensures trades_per_hour and profit_per_hour remain accurate across restarts
+        let start_time = earliest_timestamp.unwrap_or_else(Utc::now);
 
         Self {
             trades_file,
             summary_file,
             trades: Mutex::new(trades),
             next_id: AtomicU64::new(next_id),
-            start_time: Utc::now(),
+            start_time,
             is_dry_run,
             bankroll_cents,
         }

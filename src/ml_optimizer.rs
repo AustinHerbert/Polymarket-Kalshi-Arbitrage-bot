@@ -37,10 +37,11 @@ pub struct MarketCategory {
 
 impl MarketCategory {
     /// Parse a market name into a category
+    /// Note: European soccer leagues are consolidated into "Soccer"
     pub fn from_market_name(name: &str) -> Self {
         let name_lower = name.to_lowercase();
 
-        // Detect sport
+        // Detect sport - keep US sports separate, consolidate European soccer
         let sport = if name_lower.contains("nfl") || name_lower.contains("football")
             || name_lower.contains("chiefs") || name_lower.contains("eagles")
             || name_lower.contains("cowboys") || name_lower.contains("49ers")
@@ -68,12 +69,12 @@ impl MarketCategory {
             || name_lower.contains("stars") || name_lower.contains("flames")
             || name_lower.contains("jets") || name_lower.contains("canucks") {
             "NHL"
+        } else if name_lower.contains("ncaa") || name_lower.contains("college") {
+            "NCAA"
         } else if name_lower.contains("btc") || name_lower.contains("bitcoin")
             || name_lower.contains("eth") || name_lower.contains("ethereum")
             || name_lower.contains("crypto") {
             "Crypto"
-        } else if name_lower.contains("ncaa") || name_lower.contains("college") {
-            "NCAAF"
         } else {
             "Other"
         };
@@ -174,33 +175,22 @@ pub struct MlOptimizer {
 
 impl MlOptimizer {
     /// All supported market categories for pre-initialization
+    /// Note: European soccer consolidated into "Soccer", US sports kept separate
     const ALL_CATEGORIES: &'static [(&'static str, &'static [&'static str])] = &[
-        // European Soccer (full market types)
-        ("EPL", &["Moneyline", "Spread", "Total", "BTTS"]),
-        ("Bundesliga", &["Moneyline", "Spread", "Total", "BTTS"]),
-        ("LaLiga", &["Moneyline", "Spread", "Total", "BTTS"]),
-        ("SerieA", &["Moneyline", "Spread", "Total", "BTTS"]),
-        ("Ligue1", &["Moneyline", "Spread", "Total", "BTTS"]),
-        ("UCL", &["Moneyline", "Spread", "Total", "BTTS"]),
-        // Secondary European (moneyline only)
-        ("UEL", &["Moneyline"]),
-        ("EFL", &["Moneyline"]),
-        // US Sports
-        ("NBA", &["Moneyline", "Spread", "Total"]),
-        ("WNBA", &["Moneyline"]),
+        // US Sports - kept separate
         ("NFL", &["Moneyline", "Spread", "Total"]),
-        ("NHL", &["Moneyline", "Spread", "Total"]),
+        ("NBA", &["Moneyline", "Spread", "Total"]),
         ("MLB", &["Moneyline", "Spread", "Total"]),
+        ("NHL", &["Moneyline", "Spread", "Total"]),
+        ("NCAA", &["Moneyline", "Spread", "Total"]),
+        ("WNBA", &["Moneyline"]),
         ("MLS", &["Moneyline"]),
-        ("NCAAF", &["Moneyline", "Spread", "Total"]),
-        ("NCAAMB", &["Moneyline", "Spread", "Total"]),
-        ("NCAAWB", &["Moneyline", "Spread", "Total"]),
+        // Consolidated European Soccer
+        ("Soccer", &["Moneyline", "Spread", "Total", "BTTS"]),
         // Crypto markets
-        ("BTC", &["PriceBracket", "UpDown", "Hourly", "Daily"]),
-        ("ETH", &["PriceBracket", "UpDown", "Hourly", "Daily"]),
-        ("SOL", &["UpDown"]),
-        ("XRP", &["UpDown"]),
-        ("DOGE", &["UpDown"]),
+        ("Crypto", &["PriceBracket", "UpDown", "Hourly", "Daily", "Price"]),
+        // Other/Unknown
+        ("Other", &["Other"]),
     ];
 
     pub fn new(persist_path: &str) -> Self {
@@ -302,6 +292,7 @@ impl MlOptimizer {
     }
 
     /// Record an opportunity observation with real league data from API
+    /// Note: European soccer leagues consolidated into "Soccer", US sports kept separate
     pub fn record_observation_with_league(
         &self,
         league: &str,
@@ -311,33 +302,30 @@ impl MlOptimizer {
         was_executed: bool,
         profit_cents: i16,
     ) {
-        // Normalize league name to match ALL_CATEGORIES
+        // Normalize league name - keep US sports separate, consolidate European soccer
         let normalized_league = match league.to_lowercase().as_str() {
-            // European Soccer
-            "epl" | "premier_league" | "premier-league" => "EPL",
-            "bundesliga" | "bun" => "Bundesliga",
-            "la_liga" | "laliga" | "la-liga" | "lal" => "LaLiga",
-            "serie_a" | "seriea" | "serie-a" | "sea" => "SerieA",
-            "ligue_1" | "ligue1" | "ligue-1" | "fl1" => "Ligue1",
-            "champions_league" | "ucl" => "UCL",
-            "europa_league" | "uel" => "UEL",
-            "efl_championship" | "eflc" | "elc" | "efl" => "EFL",
-            // US Sports
+            // US Sports - keep separate
             "nfl" => "NFL",
             "nba" => "NBA",
             "wnba" => "WNBA",
             "nhl" => "NHL",
             "mlb" => "MLB",
             "mls" => "MLS",
-            "ncaaf" | "cfb" | "college_football" => "NCAAF",
-            "ncaamb" | "cbb" | "ncaab" | "college_basketball" => "NCAAMB",
-            "ncaawb" | "wcbb" | "womens_college_basketball" => "NCAAWB",
+            "ncaaf" | "cfb" | "college_football" => "NCAA",
+            "ncaamb" | "cbb" | "ncaab" | "college_basketball" => "NCAA",
+            "ncaawb" | "wcbb" | "womens_college_basketball" => "NCAA",
+            // European Soccer consolidated into "Soccer"
+            "epl" | "premier_league" | "premier-league"
+            | "bundesliga" | "bun"
+            | "la_liga" | "laliga" | "la-liga" | "lal"
+            | "serie_a" | "seriea" | "serie-a" | "sea"
+            | "ligue_1" | "ligue1" | "ligue-1" | "fl1"
+            | "champions_league" | "ucl"
+            | "europa_league" | "uel"
+            | "efl_championship" | "eflc" | "elc" | "efl" => "Soccer",
             // Crypto
-            "btc" | "bitcoin" => "BTC",
-            "eth" | "ethereum" => "ETH",
-            "sol" | "solana" => "SOL",
-            "xrp" | "ripple" => "XRP",
-            "doge" | "dogecoin" => "DOGE",
+            "btc" | "bitcoin" | "eth" | "ethereum" | "sol" | "solana"
+            | "xrp" | "ripple" | "doge" | "dogecoin" | "crypto" => "Crypto",
             _ => league,
         };
 
