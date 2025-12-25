@@ -22,7 +22,7 @@ use tokio_tungstenite::{connect_async, tungstenite::{http::Request, Message}};
 use tracing::{debug, error, info};
 
 use crate::config::{KALSHI_WS_URL, KALSHI_API_BASE, KALSHI_API_DELAY_MS};
-use crate::execution::NanoClock;
+use crate::utils::NanoClock;
 use crate::types::{
     KalshiEventsResponse, KalshiMarketsResponse, KalshiEvent, KalshiMarket,
     GlobalState, FastExecutionRequest, ArbType, PriceCents, SizeCents, fxhash_str,

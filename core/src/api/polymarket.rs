@@ -14,7 +14,7 @@ use tokio_tungstenite::{connect_async, tungstenite::Message};
 use tracing::{error, info, warn};
 
 use crate::config::{POLYMARKET_WS_URL, POLY_PING_INTERVAL_SECS, GAMMA_API_BASE};
-use crate::execution::NanoClock;
+use crate::utils::NanoClock;
 use crate::types::{
     GlobalState, FastExecutionRequest, ArbType, PriceCents, SizeCents,
     parse_price, fxhash_str,

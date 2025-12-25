@@ -15,3 +15,4 @@ pub use api::polymarket;
 pub use api::polymarket_clob;
 pub use utils::types;
 pub use utils::cache;
+pub use utils::NanoClock;
