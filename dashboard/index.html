@@ -350,9 +350,42 @@
                 </div>
             </div>
 
+            <!-- Open Positions -->
+            <div class="trades-section" style="margin-bottom: 30px;">
+                <h2 class="section-title">Open Positions <span id="open-count" style="font-size: 0.9rem; color: #888;">(0 active)</span></h2>
+                <div id="open-positions-summary" class="stats-grid" style="margin-bottom: 15px;">
+                    <div class="stat-card">
+                        <div class="stat-label">Total Cost Basis</div>
+                        <div id="open-cost-basis" class="stat-value">$0.00</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">Guaranteed Profit</div>
+                        <div id="open-guaranteed-profit" class="stat-value positive">$0.00</div>
+                        <div class="stat-subtext">When events settle</div>
+                    </div>
+                </div>
+                <table class="trades-table">
+                    <thead>
+                        <tr>
+                            <th>Opened</th>
+                            <th>Market</th>
+                            <th>Matched</th>
+                            <th>Exposure</th>
+                            <th>Cost</th>
+                            <th>Guaranteed Profit</th>
+                        </tr>
+                    </thead>
+                    <tbody id="open-positions-body">
+                        <tr>
+                            <td colspan="6" class="no-trades">No open positions</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
             <!-- Recent Trades -->
             <div class="trades-section">
-                <h2 class="section-title">Recent Trades</h2>
+                <h2 class="section-title">Trade History</h2>
                 <table class="trades-table">
                     <thead>
                         <tr>
@@ -361,7 +394,7 @@
                             <th>Type</th>
                             <th>Contracts</th>
                             <th>Profit</th>
-                            <th>Latency</th>
+                            <th>Status</th>
                         </tr>
                     </thead>
                     <tbody id="trades-body">
@@ -496,16 +529,74 @@
                 } else {
                     // Show most recent 20 trades
                     const recentTrades = trades.slice(-20).reverse();
-                    tbody.innerHTML = recentTrades.map(trade => `
-                        <tr>
-                            <td>${timeAgo(trade.timestamp)}</td>
-                            <td>${trade.market_name.substring(0, 40)}${trade.market_name.length > 40 ? '...' : ''}</td>
-                            <td><span class="arb-type">${trade.arb_type}</span></td>
-                            <td>${trade.contracts}</td>
-                            <td class="trade-profit ${trade.profit_cents >= 0 ? 'positive' : 'negative'}">${formatCurrency(trade.profit_cents)}</td>
-                            <td>${trade.latency_ms.toFixed(1)}ms</td>
-                        </tr>
-                    `).join('');
+                    tbody.innerHTML = recentTrades.map(trade => {
+                        // Determine status: Settled (confirmed), Pending (waiting for event), or Unknown
+                        let statusHtml;
+                        if (trade.is_settled) {
+                            statusHtml = '<span style="color: #4ade80;">Settled</span>';
+                        } else if (trade.event_expires_at) {
+                            const expiresDate = new Date(trade.event_expires_at * 1000);
+                            const timeUntil = expiresDate - new Date();
+                            if (timeUntil > 0) {
+                                const hoursUntil = Math.floor(timeUntil / 3600000);
+                                const minsUntil = Math.floor((timeUntil % 3600000) / 60000);
+                                statusHtml = `<span style="color: #fbbf24;">Pending (${hoursUntil}h ${minsUntil}m)</span>`;
+                            } else {
+                                statusHtml = '<span style="color: #4ade80;">Settled</span>';
+                            }
+                        } else {
+                            statusHtml = '<span style="color: #888;">-</span>';
+                        }
+
+                        // Show profit differently for pending vs settled
+                        const profitClass = trade.profit_cents >= 0 ? 'positive' : 'negative';
+                        const profitPrefix = !trade.is_settled && trade.event_expires_at ? '~' : '';
+
+                        return `
+                            <tr>
+                                <td>${timeAgo(trade.timestamp)}</td>
+                                <td>${trade.market_name.substring(0, 40)}${trade.market_name.length > 40 ? '...' : ''}</td>
+                                <td><span class="arb-type">${trade.arb_type}</span></td>
+                                <td>${trade.contracts}</td>
+                                <td class="trade-profit ${profitClass}">${profitPrefix}${formatCurrency(trade.profit_cents)}</td>
+                                <td>${statusHtml}</td>
+                            </tr>
+                        `;
+                    }).join('');
+                }
+
+                // Load and display open positions
+                try {
+                    const openRes = await fetch('../dashboard_data/open_positions.json');
+                    if (openRes.ok) {
+                        const openData = await openRes.json();
+
+                        // Update summary stats
+                        document.getElementById('open-count').textContent = `(${openData.open_count} active)`;
+                        document.getElementById('open-cost-basis').textContent = '$' + openData.total_cost_basis.toFixed(2);
+                        const profitEl = document.getElementById('open-guaranteed-profit');
+                        profitEl.textContent = '$' + openData.total_guaranteed_profit.toFixed(2);
+                        profitEl.className = 'stat-value ' + (openData.total_guaranteed_profit >= 0 ? 'positive' : 'negative');
+
+                        // Update positions table
+                        const openBody = document.getElementById('open-positions-body');
+                        if (openData.positions.length === 0) {
+                            openBody.innerHTML = '<tr><td colspan="6" class="no-trades">No open positions - trades will appear here when executed</td></tr>';
+                        } else {
+                            openBody.innerHTML = openData.positions.map(pos => `
+                                <tr>
+                                    <td>${timeAgo(pos.opened_at)}</td>
+                                    <td>${pos.description.substring(0, 40)}${pos.description.length > 40 ? '...' : ''}</td>
+                                    <td>${pos.matched_contracts.toFixed(0)} contracts</td>
+                                    <td class="${pos.unmatched_exposure > 0 ? 'trade-profit negative' : ''}">${pos.unmatched_exposure.toFixed(0)} exposed</td>
+                                    <td>$${pos.total_cost_dollars.toFixed(2)}</td>
+                                    <td class="trade-profit ${pos.guaranteed_profit_dollars >= 0 ? 'positive' : 'negative'}">$${pos.guaranteed_profit_dollars.toFixed(2)}</td>
+                                </tr>
+                            `).join('');
+                        }
+                    }
+                } catch (e) {
+                    console.log('No open positions file yet');
                 }
 
                 // Update last update time

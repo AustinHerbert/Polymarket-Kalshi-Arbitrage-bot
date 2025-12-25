@@ -29,6 +29,13 @@ pub struct TradeRecord {
     pub status: TradeStatus,
     pub rejection_reason: Option<String>,
     pub is_dry_run: bool,
+    /// When the event expires/settles (Unix timestamp seconds)
+    /// Profit is only "realized" after this time
+    #[serde(default)]
+    pub event_expires_at: Option<u64>,
+    /// Whether the event has settled (expires_at has passed)
+    #[serde(default)]
+    pub is_settled: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -193,8 +200,40 @@ impl TradeLogger {
         status: TradeStatus,
         rejection_reason: Option<&str>,
     ) {
+        self.log_trade_with_expiry(
+            market_id, market_name, arb_type, yes_price_cents, no_price_cents,
+            contracts, profit_cents, volume_cents, fees_cents, latency_ns,
+            status, rejection_reason, None
+        );
+    }
+
+    /// Log a trade with event expiration time for proper profit timing
+    #[inline]
+    pub fn log_trade_with_expiry(
+        &self,
+        market_id: u16,
+        market_name: &str,
+        arb_type: &str,
+        yes_price_cents: u16,
+        no_price_cents: u16,
+        contracts: i64,
+        profit_cents: i64,
+        volume_cents: u64,
+        fees_cents: u64,
+        latency_ns: u64,
+        status: TradeStatus,
+        rejection_reason: Option<&str>,
+        event_expires_at: Option<u64>,
+    ) {
         // Lock-free ID generation with atomic increment
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
+
+        // Check if event has already settled
+        let now_secs = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        let is_settled = event_expires_at.map(|exp| now_secs >= exp).unwrap_or(false);
 
         let record = TradeRecord {
             id,
@@ -212,6 +251,8 @@ impl TradeLogger {
             status,
             rejection_reason: rejection_reason.map(String::from),
             is_dry_run: self.is_dry_run,
+            event_expires_at,
+            is_settled,
         };
 
         // Add to in-memory list - parking_lot Mutex is faster
@@ -223,7 +264,19 @@ impl TradeLogger {
 
     /// Save trades and summary to disk
     fn save(&self) {
-        let trades = self.trades.lock();
+        let mut trades = self.trades.lock();
+
+        // Update is_settled status for all trades based on current time
+        let now_secs = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+
+        for trade in trades.iter_mut() {
+            if let Some(exp) = trade.event_expires_at {
+                trade.is_settled = now_secs >= exp;
+            }
+        }
 
         // Save trades
         if let Ok(file) = OpenOptions::new()

@@ -287,7 +287,7 @@ impl ExecutionEngine {
                 let volume_cents = ((req.yes_price + req.no_price) as u64) * max_contracts as u64;
                 let fees_cents = req.estimated_fee_cents() as u64 * max_contracts as u64;
 
-                logger.log_trade(
+                logger.log_trade_with_expiry(
                     market_id,
                     &pair.description,
                     arb_type_str,
@@ -300,6 +300,7 @@ impl ExecutionEngine {
                     latency_to_exec,
                     TradeStatus::DryRun,
                     None,
+                    pair.expiration_time_secs, // Event settlement time
                 );
             }
 

@@ -384,6 +384,67 @@ impl PositionTracker {
         self.trading_date = today_string();
         self.save_async();
     }
+
+    /// Export open positions to dashboard-readable JSON file
+    pub fn export_open_positions_for_dashboard(&self, dashboard_dir: &str) {
+        let open_positions: Vec<OpenPositionDisplay> = self.positions.values()
+            .filter(|p| p.status == "open")
+            .map(|p| OpenPositionDisplay {
+                market_id: p.market_id.clone(),
+                description: p.description.clone(),
+                opened_at: p.opened_at.clone(),
+                total_contracts: p.total_contracts(),
+                matched_contracts: p.matched_contracts(),
+                unmatched_exposure: p.unmatched_exposure(),
+                total_cost_dollars: p.total_cost(),
+                guaranteed_profit_dollars: p.guaranteed_profit(),
+                kalshi_yes_contracts: p.kalshi_yes.contracts,
+                kalshi_no_contracts: p.kalshi_no.contracts,
+                poly_yes_contracts: p.poly_yes.contracts,
+                poly_no_contracts: p.poly_no.contracts,
+            })
+            .collect();
+
+        let export_data = OpenPositionsExport {
+            updated_at: chrono::Utc::now().to_rfc3339(),
+            open_count: open_positions.len(),
+            total_guaranteed_profit: open_positions.iter().map(|p| p.guaranteed_profit_dollars).sum(),
+            total_cost_basis: open_positions.iter().map(|p| p.total_cost_dollars).sum(),
+            positions: open_positions,
+        };
+
+        let path = format!("{}/open_positions.json", dashboard_dir);
+        if let Ok(json) = serde_json::to_string_pretty(&export_data) {
+            let _ = std::fs::write(&path, json);
+        }
+    }
+}
+
+/// Display format for open positions (dashboard-friendly)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OpenPositionDisplay {
+    pub market_id: String,
+    pub description: String,
+    pub opened_at: String,
+    pub total_contracts: f64,
+    pub matched_contracts: f64,
+    pub unmatched_exposure: f64,
+    pub total_cost_dollars: f64,
+    pub guaranteed_profit_dollars: f64,
+    pub kalshi_yes_contracts: f64,
+    pub kalshi_no_contracts: f64,
+    pub poly_yes_contracts: f64,
+    pub poly_no_contracts: f64,
+}
+
+/// Export format for dashboard
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OpenPositionsExport {
+    pub updated_at: String,
+    pub open_count: usize,
+    pub total_guaranteed_profit: f64,
+    pub total_cost_basis: f64,
+    pub positions: Vec<OpenPositionDisplay>,
 }
 
 /// Record of a single fill
@@ -466,6 +527,8 @@ pub async fn position_writer_loop(
 ) {
     let mut batch = Vec::with_capacity(16);
     let mut interval = tokio::time::interval(Duration::from_millis(100));
+    // Export open positions to dashboard every 5 seconds
+    let mut dashboard_export_interval = tokio::time::interval(Duration::from_secs(5));
 
     loop {
         tokio::select! {
@@ -479,6 +542,8 @@ pub async fn position_writer_loop(
                         guard.record_fill_internal(&fill);
                     }
                     guard.save_async();
+                    // Export to dashboard after recording fills
+                    guard.export_open_positions_for_dashboard("./dashboard_data");
                 }
             }
             _ = interval.tick() => {
@@ -488,7 +553,14 @@ pub async fn position_writer_loop(
                         guard.record_fill_internal(&fill);
                     }
                     guard.save_async();
+                    // Export to dashboard after recording fills
+                    guard.export_open_positions_for_dashboard("./dashboard_data");
                 }
+            }
+            _ = dashboard_export_interval.tick() => {
+                // Periodically export open positions for dashboard display
+                let guard = tracker.read().await;
+                guard.export_open_positions_for_dashboard("./dashboard_data");
             }
         }
     }

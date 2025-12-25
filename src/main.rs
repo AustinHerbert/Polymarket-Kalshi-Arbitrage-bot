@@ -124,16 +124,13 @@ async fn main() -> Result<()> {
     opportunity_log::init_opportunity_logger("./dashboard_data");
 
     // Initialize ML optimizer for per-market threshold optimization
+    // NOTE: Auto-optimization is permanently DISABLED - manual control only
     let ml_optimizer = ml_optimizer::init_ml_optimizer("./dashboard_data");
-    let auto_optimize = std::env::var("AUTO_OPTIMIZE")
-        .map(|v| v == "1" || v.to_lowercase() == "true")
-        .unwrap_or(false);
-    ml_optimizer.set_auto_optimize(auto_optimize);
+    ml_optimizer.set_auto_optimize(false);
 
     info!("   Dashboard: ENABLED (data in ./dashboard_data/)");
     info!("   Opportunity Scanner: ENABLED (logging near-misses for optimization)");
-    info!("   ML Optimizer: {} (adjusts thresholds per market to maximize profit)",
-          if auto_optimize { "AUTO" } else { "MANUAL" });
+    info!("   ML Optimizer: MANUAL ONLY (auto-optimization disabled)");
     info!("   Bankroll: ${:.2}", bankroll_cents as f64 / 100.0);
 
     // Load Kalshi credentials
