@@ -205,6 +205,10 @@ pub struct TradeDisplay {
     pub volume_cents: u64,
     pub status: String,
     pub latency_ms: f64,
+    /// When the event expires/settles (Unix timestamp seconds)
+    pub event_expires_at: Option<u64>,
+    /// Whether the event has settled
+    pub is_settled: bool,
 }
 
 /// Open position for display
@@ -417,9 +421,20 @@ async fn get_analytics() -> impl IntoResponse {
 async fn get_trades() -> impl IntoResponse {
     let trades_path = "./dashboard_data/trades.json";
 
+    // Get current time to check if events have settled
+    let now_secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+
     let trades: Vec<TradeDisplay> = if let Ok(content) = std::fs::read_to_string(trades_path) {
         if let Ok(all_trades) = serde_json::from_str::<Vec<serde_json::Value>>(&content) {
             all_trades.iter().rev().take(50).map(|t| {
+                let event_expires_at = t.get("event_expires_at").and_then(|v| v.as_u64());
+                // Check is_settled from file, or compute from expiration time
+                let is_settled = t.get("is_settled").and_then(|v| v.as_bool())
+                    .unwrap_or_else(|| event_expires_at.map(|exp| now_secs >= exp).unwrap_or(false));
+
                 TradeDisplay {
                     id: t.get("id").and_then(|v| v.as_u64()).unwrap_or(0),
                     timestamp: t.get("timestamp").and_then(|v| v.as_str()).unwrap_or("").to_string(),
@@ -429,6 +444,8 @@ async fn get_trades() -> impl IntoResponse {
                     volume_cents: t.get("volume_cents").and_then(|v| v.as_u64()).unwrap_or(0),
                     status: t.get("status").and_then(|v| v.as_str()).unwrap_or("unknown").to_string(),
                     latency_ms: t.get("latency_ms").and_then(|v| v.as_f64()).unwrap_or(0.0),
+                    event_expires_at,
+                    is_settled,
                 }
             }).collect()
         } else {
@@ -1804,7 +1821,7 @@ const DASHBOARD_HTML: &str = r##"<!DOCTYPE html>
         <!-- Trades Tab -->
         <div id="tab-trades" class="tab-content">
             <div class="section">
-                <div class="section-title">Recent Trades (Last 50)</div>
+                <div class="section-title">Trade History (Last 50)</div>
                 <div class="table-scroll">
                     <table class="trade-table">
                         <thead>
@@ -1815,7 +1832,7 @@ const DASHBOARD_HTML: &str = r##"<!DOCTYPE html>
                                 <th>Profit</th>
                                 <th>Volume</th>
                                 <th>Latency</th>
-                                <th>Status</th>
+                                <th>Settlement</th>
                             </tr>
                         </thead>
                         <tbody id="trades-body">
@@ -2220,16 +2237,41 @@ const DASHBOARD_HTML: &str = r##"<!DOCTYPE html>
                 }
 
                 const profitClass = t.profit_cents >= 0 ? 'profit-positive' : 'profit-negative';
-                const statusClass = t.status === 'executed' ? 'status-executed' :
-                                   t.status === 'dryrun' ? 'status-dryrun' : 'status-rejected';
+
+                // Determine settlement status
+                let settlementHtml;
+                if (t.is_settled) {
+                    settlementHtml = '<span style="color:#4ade80">Settled</span>';
+                } else if (t.event_expires_at) {
+                    const expiresDate = new Date(t.event_expires_at * 1000);
+                    const timeUntil = expiresDate - new Date();
+                    if (timeUntil > 0) {
+                        const hoursUntil = Math.floor(timeUntil / 3600000);
+                        const minsUntil = Math.floor((timeUntil % 3600000) / 60000);
+                        if (hoursUntil > 24) {
+                            const daysUntil = Math.floor(hoursUntil / 24);
+                            settlementHtml = `<span style="color:#fbbf24">${daysUntil}d ${hoursUntil % 24}h</span>`;
+                        } else {
+                            settlementHtml = `<span style="color:#fbbf24">${hoursUntil}h ${minsUntil}m</span>`;
+                        }
+                    } else {
+                        settlementHtml = '<span style="color:#4ade80">Settled</span>';
+                    }
+                } else {
+                    settlementHtml = '<span style="color:#8b949e">-</span>';
+                }
+
+                // Prefix profit with ~ if not yet settled
+                const profitPrefix = !t.is_settled && t.event_expires_at ? '~' : '';
+
                 return `<tr>
                     <td>${time}</td>
                     <td>${t.market_name.substring(0, 30)}</td>
                     <td>${t.arb_type}</td>
-                    <td class="${profitClass}">${formatCents(t.profit_cents)}</td>
+                    <td class="${profitClass}">${profitPrefix}${formatCents(t.profit_cents)}</td>
                     <td>${formatCents(t.volume_cents)}</td>
                     <td>${latencyMs.toFixed(1)}ms</td>
-                    <td class="${statusClass}">${t.status}</td>
+                    <td>${settlementHtml}</td>
                 </tr>`;
             }).join('');
         }
